@@ -1,0 +1,31 @@
+[base]
+name=CentOS-$releasever - Base
+baseurl=http://172.21.89.31/centos/$releasever/os/$basearch/
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-$releasever
+
+[updates]
+name=CentOS-$releasever - Updates
+baseurl=http://172.21.89.31/centos/$releasever/updates/$basearch/
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-$releasever
+
+[extras]
+name=CentOS-$releasever - Extras
+baseurl=http://172.21.89.31/centos/$releasever/extras/$basearch/
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-$releasever
+
+[epel]
+name=EPEL-$releasever
+baseurl=http://172.21.89.31/epel/$releasever/$basearch/
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-$releasever
+
+[sktx]
+name=SKTechx-$releasever - Private
+baseurl=http://pkgrepos.sktx.kr/sktx/centos/$releasever/$basearch/
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-SKTechx-CentOS-$releasever
+

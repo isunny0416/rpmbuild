@@ -1,0 +1,36 @@
+diff -urNp php-7.0.13.org/configure php-7.0.13/configure
+--- php-7.0.13.org/configure	2016-11-08 10:07:39.000000000 -0500
++++ php-7.0.13/configure	2016-11-27 20:46:00.678974670 -0500
+@@ -3650,7 +3650,7 @@ ac_config_headers="$ac_config_headers ma
+ PHP_MAJOR_VERSION=7
+ PHP_MINOR_VERSION=0
+ PHP_RELEASE_VERSION=13
+-PHP_EXTRA_VERSION=""
++PHP_EXTRA_VERSION=".Skt"
+ PHP_VERSION="$PHP_MAJOR_VERSION.$PHP_MINOR_VERSION.$PHP_RELEASE_VERSION$PHP_EXTRA_VERSION"
+ PHP_VERSION_ID=`expr $PHP_MAJOR_VERSION \* 10000 + $PHP_MINOR_VERSION \* 100 + $PHP_RELEASE_VERSION`
+ 
+diff -urNp php-7.0.13.org/configure.in php-7.0.13/configure.in
+--- php-7.0.13.org/configure.in	2016-11-08 10:07:26.000000000 -0500
++++ php-7.0.13/configure.in	2016-11-27 20:46:22.143974465 -0500
+@@ -120,7 +120,7 @@ int zend_sprintf(char *buffer, const cha
+ PHP_MAJOR_VERSION=7
+ PHP_MINOR_VERSION=0
+ PHP_RELEASE_VERSION=13
+-PHP_EXTRA_VERSION=""
++PHP_EXTRA_VERSION=".Skt"
+ PHP_VERSION="$PHP_MAJOR_VERSION.$PHP_MINOR_VERSION.$PHP_RELEASE_VERSION$PHP_EXTRA_VERSION"
+ PHP_VERSION_ID=`expr [$]PHP_MAJOR_VERSION \* 10000 + [$]PHP_MINOR_VERSION \* 100 + [$]PHP_RELEASE_VERSION`
+ 
+diff -urNp php-7.0.13.org/main/php_version.h php-7.0.13/main/php_version.h
+--- php-7.0.13.org/main/php_version.h	2016-11-08 10:08:37.000000000 -0500
++++ php-7.0.13/main/php_version.h	2016-11-27 20:47:03.092974075 -0500
+@@ -3,6 +3,6 @@
+ #define PHP_MAJOR_VERSION 7
+ #define PHP_MINOR_VERSION 0
+ #define PHP_RELEASE_VERSION 13
+-#define PHP_EXTRA_VERSION ""
+-#define PHP_VERSION "7.0.13"
++#define PHP_EXTRA_VERSION ".Skt"
++#define PHP_VERSION "7.0.13.Skt"
+ #define PHP_VERSION_ID 70013

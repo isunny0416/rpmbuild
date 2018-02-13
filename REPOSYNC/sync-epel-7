@@ -1,0 +1,61 @@
+#! /bin/env bash
+#
+# @file:
+# @brief:
+# @author: YoungJoo.Kim <vozlt@sk.com>
+# @version:
+# @date:
+
+# lftp http://mirror.premi.st/epel/6/x86_64/
+# createrepo -p /home/skt/os/addons/centos/6/epel/x86_64
+
+epel_url=http://mirror.premi.st/epel/7/x86_64
+#epel_repo=/home/skt/os/addons/centos/7/epel/x86_64
+epel_repo=/data/repo/epel/7/x86_64
+
+usage() {
+    echo "Usage    : $0 {search|get|sync} {string}"
+    echo
+    echo "Options  :"
+    echo "            search       search package by string"
+    echo "            get          download package by string"
+    echo "            createrepo   createrepo"
+    echo
+    echo "Examples :"
+    echo "            $0 search ngrep"
+    echo "            $0 get ngrep*"
+    echo "            $0 createrepo"
+    exit 1;
+}
+
+__first_chr() {
+    local string=$1
+    echo -en ${string:0:1}
+}
+__search() {
+    local string=$1
+    lftp $epel_url/$(__first_chr $string) -e 'ls; quit' | grep $string
+}
+
+__get() {
+    local string=$1
+    lftp $epel_url/$(__first_chr $string) -e "set xfer:clobber on; mget -O $epel_repo/Packages $string; quit"
+    ls -al $epel_repo/Packages/$string
+}
+
+__createrepo() {
+    createrepo -p $epel_repo
+}
+
+main() {
+    local cmd=$1 string=$2
+
+    [ -z "$cmd" ] && usage
+
+    echo ">>> $cmd::$string::$epel_url/$(__first_chr $string)"
+
+    __${cmd} $string
+
+}
+
+main $*

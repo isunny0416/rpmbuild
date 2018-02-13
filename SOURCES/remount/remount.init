@@ -1,0 +1,104 @@
+#!/bin/bash
+#
+# Mount remote file system
+#
+# chkconfig: 345 26 73
+# description: remote file system mount init script
+#
+
+prog=remount
+lockfile=/var/lock/subsys/$prog
+conf=/etc/sysconfig/remount
+
+mount="/bin/mount"
+umount="/bin/umount"
+suffix=
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# Source networking configuration.
+[ -f /etc/sysconfig/network ] && . /etc/sysconfig/network
+
+# Source remount api
+. /usr/share/remount/functions
+
+if [ -f "${conf}-suffix" ]; then
+	suffix="$(cat ${conf}-suffix)"
+else
+	suffix="-$(hostname -s | sed -e 's/-[0-9].*$//g')"
+fi
+
+if [ -f "${conf}-${suffix}" ]; then
+	confp ${conf}-${suffix}
+else
+	confp ${conf}
+fi
+
+[ ${#v[@]} -eq 0 ] && exit 0;
+
+argv=$1
+argc=${#v[@]}
+individual=$2
+
+i=1
+case "${argv}" in
+	start)
+		if [ -n "${individual}" ]; then
+			individual_check "${individual}"
+
+			eval `echo ${RETVALUE}`
+			#echo "mountfs \"${fs}\" \"${from}\" \"${to}\" \"${opt}\""
+			mountfs "${fs}" "${from}" "${to}" "${opt}"
+		else
+			while [ $i -le $argc ]
+			do
+				if [ -z "${v[$i]}" ]; then
+					argc=$(($argc + 1))
+					i=$(($i + 1))
+					continue;
+				fi
+				eval `echo "${v[$i]}" | awk '{print "fs="$1";from="$2";to="$3";opt="$4}'`
+	
+				#echo "mountfs \"${fs}\" \"${from}\" \"${to}\" \"${opt}\""
+				mountfs "${fs}" "${from}" "${to}" "${opt}"
+				i=$(($i + 1))
+			done
+		fi
+		;;
+	stop)
+		if [ -n "${individual}" ]; then
+			individual_check "${individual}"
+
+			eval `echo ${RETVALUE}`
+			umountfs "${from}" "${to}"
+			remove_lock
+		else
+			tres=0
+			while [ $i -le $argc ]
+			do
+				if [ -z "${v[$i]}" ]; then
+					argc=$(($argc + 1))
+					i=$(($i + 1))
+					continue
+				fi
+
+				eval `echo "${v[$i]}" | awk '{print "fs="$1";from="$2";to="$3";opt="$4}'`
+				umountfs "${from}" "${to}"
+				[ $? -ne 0 ] && tres=1
+
+				i=$(($i + 1))
+			done
+
+			[ ${tres} -eq 0 ] && rm -f $lockfile >& /dev/null
+		fi
+		;;
+	restart)
+		$0 stop
+		$0 start
+		;;
+	*)
+		printf "Usage: %s {start|restart|stop}\n" $0
+esac
+
+exit 0

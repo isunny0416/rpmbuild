@@ -1,0 +1,6 @@
+#
+# filebeat config file
+#
+
+SYSLOG_TAG="'syslog','`hostname`','`hostname`_syslog'"
+SECURELOG_TAG="'securelog','`hostname`','`hostname`_securelog'"

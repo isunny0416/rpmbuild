@@ -1,0 +1,10 @@
+--- php-7.0.3.org/ext/dba/config.m4	2016-02-03 01:32:25.000000000 +0900
++++ php-7.0.3/ext/dba/config.m4	2016-03-31 00:52:14.466284224 +0900
+@@ -150,6 +150,7 @@ if test "$PHP_GDBM" != "no"; then
+   done
+ 
+   if test -n "$THIS_INCLUDE"; then
++    LIBS="$LIBS -lgdbm_compat"
+     PHP_CHECK_LIBRARY(gdbm, gdbm_open, [
+       AC_DEFINE_UNQUOTED(GDBM_INCLUDE_FILE, "$THIS_INCLUDE", [ ])
+       AC_DEFINE(DBA_GDBM, 1, [ ]) 

@@ -1,0 +1,233 @@
+#!/bin/sh
+#
+# Startup script for the Tomcat Web Server
+#
+# chkconfig: 345 84 16
+# description: Tomcat Web Server. It is used to serve \
+#          servlet and jsp.
+# processname: java
+# pidfile: /var/run/tomcat.pid
+# config: ${CATALINA_HOME}/conf/server.xml
+
+# Source function library
+source /etc/rc.d/init.d/functions
+
+# Source networking configuration.
+. /etc/sysconfig/network
+
+# Check that networking is up.
+[ ${NETWORKING} = "no" ] && exit 0
+
+# tomcat startup configuration
+if [ -f "/etc/sysconfig/tomcat" ]; then
+	source /etc/sysconfig/tomcat
+fi
+
+PID_FILE=/var/run/tomcat.pid
+JAVA_BASE=${JAVA_BASE:=/usr/java}
+JAVA_HOME=${JAVA_HOME:=${JAVA_BASE}/latest}
+CATALINA_HOME=${CATALINA_HOME:=${JAVA_BASE}/tomcat}
+PATH="${PATH}:${JAVA_HOME}/bin:${CATALINA_HOME}/bin"
+
+TC_RUNUSER=${TC_RUNUSER:=nobody}
+TC_CHARSET=${TC_CHARSET:=C}
+TC_INSTANCE_BASE=${TC_INSTANCE_BASE:=/home/tomcat}
+TC_MAX_FILE_OPEN=${TC_MAX_FILE_OPEN:=1024}
+TC_STOP_TIMEOUT=${TC_STOP_TIMEOUT:=5}
+TC_AUTHBIND=${TC_AUTHBIND:=no}
+
+INSTANCE_NAME=$2
+[ -z "${INSTANCE_NAME}" ] && INSTANCE_NAME="${TC_INSTANCE_WHITELIST}"
+
+export JAVA_HOME CATALINA_HOME PATH JAVA_BASE CATALINA_BASE
+if [ -n "${JAVA_OPTS}" ]; then
+	COMMON_JAVA_OPTS="${JAVA_OPTS}"
+	export COMMON_JAVA_OPTS
+fi
+
+if [ -n "${CATALINA_OPTS}" ]; then
+	COMMON_CATALINA_OPTS="${CATALINA_OPTS}"
+	export COMMON_CATALINA_OPTS
+fi
+
+LANG=${TC_CHARSET}
+export LANG
+
+STARTUP=${CATALINA_HOME}/bin/catalina.sh
+
+tomcat_status() {
+	CHK=$1
+
+	if [ "${CHK}" = "0" ]; then
+		echo_success
+	else
+		echo_failure
+	fi
+	echo
+
+	return $CHK
+}
+
+startup_init() {
+	case "$1" in
+		start)
+			# options for multi-instance
+			if [ -r "${CATALINA_BASE}/conf/options" ]; then
+				source ${CATALINA_BASE}/conf/options
+			fi
+
+			JAVA_OPTS="${COMMON_JAVA_OPTS}"
+			if [ -n "${TC_JAVA_OPTS}" ]; then
+				JAVA_OPTS="${JAVA_OPTS} ${TC_JAVA_OPTS}"
+			fi
+
+			CATALINA_OPTS="${COMMON_CATALINA_OPTS}"
+			if [ -n "${TC_CATALINA_OPTS}" ]; then
+				CATALINA_OPTS="${CATALINA_OPTS} ${TC_CATALINA_OPTS}"
+			fi
+
+			AUTHBIND_COMMAND=
+			if [ "${TC_AUTHBIND}" = "yes" ]; then
+				JAVA_OPTS="$JAVA_OPTS -Djava.net.preferIPv4Stack=true"
+				AUTHBIND_COMMAND="exec /usr/bin/authbind --deep"
+			fi
+			export JAVA_OPTS CATALINA_OPTS
+
+			if [ "$USER" == "root" -o "`whoami 2> /dev/null`" == "root" ]; then
+				su -s /bin/bash ${TC_RUNUSER} \
+					-c "LANG=${TC_CHARSET} ${AUTHBIND_COMMAND} ${STARTUP} $1" &> /dev/null
+			else
+				LANG=${TC_CHARSET} ${AUTHBIND_COMMAND} ${STARTUP} $1 &> /dev/null
+			fi
+			ret=$?
+			JAVA_OPTS="${COMMON_JAVA_OPTS}"
+			;;
+
+		stop)
+			LANG=${TC_CHARSET} ${STARTUP} $1 &> /dev/null
+			ret=$?
+			;;
+
+		*)
+			ret=1
+	esac
+
+	return $ret
+}
+
+tomcat_watch_process() {
+	count=0
+	while [ true ]
+	do
+		sleep 1
+		chk_process $1
+		chk=$?
+
+		[ $chk -ne 0 ] && break
+		echo -n "."
+		count=$[$count + 1]
+
+		[ $count -eq ${TC_STOP_TIMEOUT} ] && break;
+	done
+
+	#echo -n " $count "
+	retval=0
+	[ $count -eq ${TC_STOP_TIMEOUT} ] && retval=1
+	return $retval
+}
+
+chk_process() {
+	[ -n "$1" ] && grep_value=" | /bin/grep '$1 '" || grep_value=
+	eval "/bin/ps auxw | /bin/grep catalina.base | /bin/grep -v grep${grep_value} >& /dev/null"
+
+	return $?
+}
+
+force_kill() {
+	if [ -n "$1" ]; then
+		#echo "/bin/ps auxw | /bin/grep java | /bin/grep \$1 | /bin/grep -v grep | awk '{print \$2}' 2> /dev/null"
+		proc=$(/bin/ps auxw | /bin/grep catalina.base | /bin/grep '$1 ' | /bin/grep -v grep | awk '{print $2}' 2> /dev/null)
+	else
+		#echo "/bin/ps auxw | /bin/grep java | /bin/grep -v grep | awk '{print \$2}' 2> /dev/null"
+		proc=$(/bin/ps auxw | /bin/grep catalina.base | /bin/grep -v grep | awk '{print $2}' 2> /dev/null)
+	fi
+	for i in $proc
+	do
+		#echo "kill -9 $i 2> /dev/null"
+		kill -9 $i 2> /dev/null
+	done
+}
+
+# See how we were called.
+case "$1" in
+	start)
+		ulimit -n ${TC_MAX_FILE_OPEN}
+		umask 022
+
+		success_res=1
+
+		if [ -z "${INSTANCE_NAME}" -o -z "${TC_INSTANCE_BASE}" ]; then
+			echo -n "Starting tomcat: "
+			startup_init start
+			tomcat_status $?
+			success_res=$?
+		else
+			for instance in ${INSTANCE_NAME}
+			do
+				export CATALINA_BASE=${TC_INSTANCE_BASE}/${instance}
+				echo -n "Starting tomcat ${instance}: "
+				startup_init start
+				tomcat_status $?
+				[ $? -eq 0 ] && success_res=0
+				sleep 1
+			done
+		fi
+
+		# prevent for the systemd stop after start
+		proc=$(/bin/ps auxw | /bin/grep catalina.base | /bin/grep -v grep | awk '{print $2}' 2> /dev/null)
+		echo -en $proc > $PID_FILE
+
+		[ $success_res == 0 ] && touch /var/lock/subsys/tomcat
+		;;
+	stop)
+		success_res=0
+
+		if [ -z "${INSTANCE_NAME}" -o -z "${TC_INSTANCE_BASE}" ]; then
+			echo -n "Shutting down tomcat: "
+			startup_init stop
+			tomcat_watch_process
+			[ $chk -ne 0 ] && force_kill
+			tomcat_status 0
+			success_res=$?
+		else
+			for instance in ${INSTANCE_NAME}
+			do
+				export CATALINA_BASE=${TC_INSTANCE_BASE}/${instance}
+				echo -n "Shutting down tomcat ${instance}: "
+				startup_init stop
+				tomcat_watch_process ${instance}
+				chk=$?
+
+				[ $chk -ne 0 ] && force_kill ${instance}
+				tomcat_status 0
+				[ $? -ne 0 ] && success_res=1
+			done
+		fi
+
+		[ $success_res == 0 ] && rm -f /var/lock/subsys/tomcat
+		;;
+	restart)
+		instance=
+		if [ -n "${INSTANCE_NAME}" ]; then
+			echo "${INSTANCE_NAME}" | /bin/grep " " >& /dev/null
+			[ $? -ne 0 ] && instance="${INSTANCE_NAME}"
+		fi
+		$0 stop ${instance}
+		$0 start ${instance}
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart} [?INSTANCE_NAME]"
+		exit 1
+esac
+
+exit 0

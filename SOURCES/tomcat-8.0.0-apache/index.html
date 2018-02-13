@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<title>SKTechx Java Web Server</title>
+	<link rel="stylesheet" type="text/css" href="./tomcat.css" />
+</head>
+
+<body>
+
+<div id="guide">
+
+	<div id="content-head">
+		<h1>SKTechx Linux Tomcat Default Page</h1>
+	</div>
+
+	<div id="content-body">
+		이 문서는 톰캣 웹서버가 설치 된 후, 기본 설정 상태에서 톰캣 서버가 잘
+		작동을 하는지 확인을 하기 위한 문서 입니다. 이 문서를 읽을 수 있다면, 톰캣 웹서버는
+		이상 없이 작동을 하는 것을 의미합니다.
+		</p>
+
+		<p>
+		<span class="sub-title b">이 문서는:</span>
+
+		톰캣의 기본 홈페이지 이며, 로컬 시스템상의 다음 위치에서 찾을 수 있습니다.
+		</p>
+
+		<p class="path">
+		$CATALINA_HOME/webapps/ROOT/index.html
+		</p>
+
+		<blockquote>
+		&quot;$CATALINA_HOME&quot;은 톰캣이 설치된 디렉토리를 의미합니다. 톰캣에 대한 자세한
+		사항은 <a href="/docs">톰캣 문서</a>를 참고 하십시오.
+		</blockquote>
+
+		<p>만약, 의도하지 않은 출력이라면, 설정 파일을 확인해 보시기 바랍니다.</p>
+
+		
+		<fieldset id="sec-issue">
+			<legend>보안 이슈</legend>
+
+			<p>
+			보안상의 이유로, manager webapp는 "manager" role을 가진 사용자만 관리 할 수 있도록
+			제한이 됩니다. 유저 설정은
+			<span class="path">$CATALINA_HOME/conf/tomcat-users.xml</span>에서 정의가 됩니다.
+			</p>
+
+			<ul>
+				<li><a href="/manager/html">Tomcat Status</a></li>
+				<li><a href="/manager/status">Tomcat Manager</a></li>
+			</ul>
+		</fieldset>
+
+
+	</div>
+
+	<div id="content-bottom">
+		Powered by <a href='http://tomcat.apache.org/' target='_blank'><span class="b">Apache</span></a> &amp;
+		Packaged by <a href='http://sktechx.com/' target='_blank'><span class="b">SKTechx</span></a>
+	</div>
+</div>
+
+</body>
+</html>

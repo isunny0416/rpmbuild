@@ -1,0 +1,8 @@
+/var/log/filebeat/*.log {
+	copytruncate
+	monthly
+	compress
+	missingok
+	notifempty
+	delaycompress
+}

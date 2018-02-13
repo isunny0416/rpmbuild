@@ -1,0 +1,154 @@
+#! /bin/env bash
+#
+# @file:    syncRpms
+# @brief:
+# @author:  YoungJoo.Kim <vozlt@sk.com>
+# @version:
+# @date:
+
+# load config
+#. /etc/sysconfig/repository-6
+# repository root path
+repos_path=/data/repo
+
+# repository backup path
+backup_path=/backup
+
+# Make sure umask is sane
+umask 022
+
+# Set up a default search path.
+PATH="/sbin:/usr/sbin:/bin:/usr/bin"
+export PATH
+
+
+_server=build-6
+#_build_path=/data/rpmbuild
+_build_path=":BUILD"
+#_repos_path=${repos_path}/sktx/centos/6
+#_repos_path=${repos_path}/sktx/centos/6
+_repos_path=${repos_path}
+_createrepo=/usr/bin/createrepo
+_repos=( "sktx" )
+_repos_core=( "sktx" )
+_rc=$1
+_cg=$2
+#_rsync_options="--rsh=\"ssh -p 2022\""
+
+usage () {
+    echo "사용법    : $0 {[Pattern] | ALL | INIT} {REPO}"
+    echo
+    echo "옵션설명  :"
+    echo "            [Pattern]  해당패턴만 동기화"
+    echo "            ALL        core 전체 동기화"
+    echo "            INIT       repodata 초기화"
+    echo
+    echo "예제들    :"
+    echo "            $0 \"php*7.0.3*\""
+    echo "            $0 ALL"
+    echo "            $0 INIT"
+    echo "            $0 INIT base"
+    echo "            $0 \"mysql*\" core"
+    exit 1;
+}
+
+ansiEcho() {
+    _msg=$1
+    _color=$2
+    [ -z "$_color" ] && _color=34;
+    echo -en "\\033[1;${_color}m${_msg}\033[0m"
+}
+
+infoEcho() {
+    echo
+    echo -n "["
+    ansiEcho "$*"
+    echo "]";
+}
+
+cmdEcho() {
+    echo
+    echo -n "["
+    ansiEcho "$*" 33
+    echo "]";
+}
+
+syncRpms() {
+    _rc=$1
+    _cg=$2
+
+	##/data/repo/sktx/centos/6/x86_64/Packages
+    cmdEcho "shell> rsync -avg ${_rsync_options} ${_server}:${_build_path}/SRPMS/$_rc ${_repos_path}/srcs/srpms/"
+    rsync -avg ${_rsync_options} ${_server}:${_build_path}/SRPMS/$_rc ${_repos_path}/srcs/srpms/
+
+    cmdEcho "shell> rsync -avg ${_rsync_options} ${_server}:${_build_path}/RPMS/x86_64/$_rc ${_repos_path}/$_cg/centos/6/x86_64/Packages/"
+    rsync -avg ${_rsync_options} ${_server}:${_build_path}/RPMS/x86_64/$_rc ${_repos_path}/$_cg/centos/6/x86_64/Packages/
+    #cmdEcho "shell> rsync -avg ${_rsync_options} ${_server}:${_build_path}/RPMS/x86_64/$_rc ${_repos_path}/$_cg/x86_64/RPMS/"
+    #rsync -avg ${_rsync_options} ${_server}:${_build_path}/RPMS/x86_64/$_rc ${_repos_path}/$_cg/x86_64/RPMS/
+
+    cmdEcho "shell> rsync -avg ${_rsync_options} ${_server}:${_build_path}/RPMS/noarch/$_rc ${_repos_path}/$_cg/centos/6/x86_64/Packages/"
+    rsync -avg ${_rsync_options} ${_server}:${_build_path}/RPMS/noarch/$_rc ${_repos_path}/$_cg/centos/6/x86_64/Packages/
+    #cmdEcho "shell> rsync -avg ${_rsync_options} ${_server}:${_build_path}/RPMS/noarch/$_rc ${_repos_path}/$_cg/x86_64/RPMS/"
+    #rsync -avg ${_rsync_options} ${_server}:${_build_path}/RPMS/noarch/$_rc ${_repos_path}/$_cg/x86_64/RPMS/
+}
+
+createRepo() {
+    _cg=$1
+
+    cmdEcho "shell> $_createrepo -p ${_repos_path}/$_cg/centos/6/x86_64"
+    [ -d "${_repos_path}/$_cg/centos/6/x86_64/repodata" ] && $_createrepo -p ${_repos_path}/$_cg/centos/6/x86_64
+}
+
+initRepo() {
+    _cg=$1
+
+    if [ -z $_cg ]; then
+        for ((a=0; a < ${#_repos[@]} ; a++))
+        do
+            _cg=${_repos[$a]}
+            cmdEcho "shell> rm -rf ${_repos_path}/$_cg/centos/6/x86_64/repodata/*"
+            #cmdEcho "shell> rm -rf ${_repos_path}/$_cg/x86_64/repodata/*"
+            #[ -d "${_repos_path}/$_cg/x86_64/repodata" ] && rm -rf ${_repos_path}/$_cg/x86_64/repodata/*
+            cmdEcho "shell> $_createrepo -p ${_repos_path}/$_cg/centos/6/x86_64"
+            #cmdEcho "shell> $_createrepo -p ${_repos_path}/$_cg/x86_64"
+            #[ -d "${_repos_path}/$_cg/x86_64/repodata" ] && $_createrepo -p ${_repos_path}/$_cg/x86_64
+        done
+    else
+        cmdEcho "shell> rm -rf ${_repos_path}/$_cg/centos/6/x86_64/repodata/*"
+        #cmdEcho "shell> rm -rf ${_repos_path}/$_cg/x86_64/repodata/*"
+        #[ -d "${_repos_path}/$_cg/x86_64/repodata" ] && rm -rf ${_repos_path}/$_cg/x86_64/repodata/*
+        cmdEcho "shell> $_createrepo -p ${_repos_path}/$_cg/centos/6/x86_64"
+        #cmdEcho "shell> $_createrepo -p ${_repos_path}/$_cg/x86_64"
+        #[ -d "${_repos_path}/$_cg/x86_64/repodata" ] && $_createrepo -p ${_repos_path}/$_cg/x86_64
+    fi
+    exit 0;
+}
+
+syncRun() {
+    _rc=$1
+    _cg=$2
+
+    if [ -z $_cg ]; then
+        for ((a=0; a < ${#_repos_core[@]} ; a++))
+        do
+            _cg=${_repos_core[$a]}
+            infoEcho "syncRpms \"$_rc\" \"$_cg\""
+            syncRpms "$_rc" "$_cg"
+            #infoEcho "createRepo \"$_cg\""
+            createRepo "$_cg"
+        done
+    else
+        infoEcho "syncRpms \"$_rc\" \"$_cg\""
+        syncRpms "$_rc" "$_cg"
+        #infoEcho "createRepo \"$_cg\""
+        #createRepo "$_cg"
+    fi
+}
+
+[ "$_rc" == "INIT" ] && initRepo "$_cg"
+
+[ "$_rc" == "ALL" ] && _rc="*"
+
+[ -z "$_rc" ] && usage
+
+syncRun "$_rc" "$_cg"

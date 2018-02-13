@@ -1,0 +1,8 @@
+/var/log/tomcat/catalina.out *.log {
+	copytruncate
+	monthly
+	compress
+	missingok
+	notifempty
+	delaycompress
+}
