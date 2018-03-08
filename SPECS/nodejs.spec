@@ -1,4 +1,4 @@
-%define npm_repo_url	http://172.21.89.31:8081/repository/npm-proxy-repository/
+%define _npm_repo_url	http://172.21.89.31:8081/repository/npm-proxy-repository/
 
 Name: nodejs
 Version: 8.4.0

@@ -2,11 +2,11 @@
 %define erlang_minver R16B-03
 
 Name: rabbitmq-server
-Version: 3.6.14
+Version: 3.6.12
 Release: 1%{?dist}
 License: MPLv1.1 and MIT and ASL 2.0 and BSD
 Group: %{group_tag}
-Source: http://www.rabbitmq.com/releases/rabbitmq-server/v%{upstream_version}/%{name}-%{upstream_version}.tar.xz
+Source: http://www.rabbitmq.com/releases/rabbitmq-server/v%{version}/%{name}-%{version}.tar.xz
 Source1: rabbitmq-server.init
 Source2: rabbitmq-server.logrotate
 Source3: rabbitmq-server.service
@@ -37,7 +37,7 @@ RabbitMQ is an open source multi-protocol messaging broker.
 
 # We want to install into /usr/lib, even on 64-bit platforms
 %define _rabbit_libdir %{_exec_prefix}/lib/rabbitmq
-%define _rabbit_erllibdir %{_rabbit_libdir}/lib/rabbitmq_server-%{upstream_version}
+%define _rabbit_erllibdir %{_rabbit_libdir}/lib/rabbitmq_server-%{version}
 %define _rabbit_server_ocf scripts/rabbitmq-server.ocf
 %define _plugins_state_dir %{_localstatedir}/lib/rabbitmq/plugins
 %define _rabbit_server_ha_ocf scripts/rabbitmq-server-ha.ocf
@@ -47,10 +47,10 @@ RabbitMQ is an open source multi-protocol messaging broker.
 
 
 %prep
-%setup -q -n %{name}-%{upstream_version}
+%setup -q -n %{name}-%{version}
 
 %build
-cp -a deps/rabbit/docs/README-for-packages %{_builddir}/rabbitmq-server-%{upstream_version}/README
+cp -a deps/rabbit/docs/README-for-packages %{_builddir}/rabbitmq-server-%{version}/README
 env -u DEPS_DIR make %{?_smp_mflags} dist manpages
 
 %install
@@ -112,7 +112,7 @@ fi
 
 # create rabbitmq user
 if ! getent passwd rabbitmq >/dev/null; then
-        useradd -r -g rabbitmq -d %{_localstatedir}/lib/rabbitmq -s /sbin/nologin rabbitmq \
+        useradd -r -g rabbitmq -d %{_localstatedir}/lib/rabbitmq rabbitmq \
             -c "RabbitMQ messaging server"
 fi
 
@@ -203,9 +203,6 @@ systemctl try-restart %{name}.service >/dev/null 2>&1 || :
 rm -rf %{buildroot}
 
 %changelog
-* Tue Nov 7 2017 michael@rabbitmq.com 3.6.14-1
-- New Upstream Release
-
 * Mon Sep 11 2017 michael@rabbitmq.com 3.6.12-1
 - New Upstream Release
 

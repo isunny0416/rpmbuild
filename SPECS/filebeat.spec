@@ -7,7 +7,7 @@
 AutoReqProv:    no
 Name:           filebeat
 Version:        5.4.3
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Lightweight Data Shippers
 
 Group:          Applications/System
@@ -111,5 +111,7 @@ fi
 %attr(0644,root, root) %config(noreplace) %{_sysconfdir}/sysconfig/filebeat
 
 %changelog
+* Mon Feb 12 2018 Insun.Kim <insun.kim@sk.com> - 5.4.3-2
+- change systemd file
 * Fri Jan 13 2018 Insun.Kim <insun.kim@sk.com> - 5.4.3-1
 - add package
