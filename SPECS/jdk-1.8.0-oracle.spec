@@ -1,9 +1,9 @@
 %define _unpackaged_files_terminate_build 0
 
-%define __jvmdir		/usr/lib/jvm
+%define __jvmdir		/usr/java
 
 %define _java_ver		1.8.0
-%define _java_rel		151
+%define _java_rel		161
 %define _java_home		%{__jvmdir}
 
 %define java_rel		%{_java_rel}
@@ -24,9 +24,9 @@
 %define __jar_repack %{nil}
 
 Summary: Java(TM) Platform Standard Edition Development Kit
-Name: jdk-1.8.0-oracle
-Version: %{_java_ver}
-Release: %{_java_rel}%{?dist}
+Name: jdk-1.8.0
+Version: %{_java_rel}
+Release: 1%{?dist}
 Epoch: 0
 Group: Development/Tools
 License: Oracle Binary Code License (BCL)
@@ -40,13 +40,13 @@ Source5: US_export_policy.jar
 Source6: local_policy.jar
 Source7: java.security
 Source100: jdk-mksource.sh
-Buildroot: %{_tmppath}/jdk-%{version}_%{java_rel}-root
+Buildroot: %{_tmppath}/%{name}_%{java_rel}-root
 Requires: /bin/basename /bin/cat /bin/cp /bin/gawk /bin/grep
 Requires: /bin/ln /bin/ls /bin/mkdir /bin/mv /bin/pwd /bin/rm
 Requires: /bin/sed /bin/sort /bin/touch /usr/bin/cut /usr/bin/dirname
 Requires: /usr/bin/expr /usr/bin/find /usr/bin/tail /usr/bin/tr
 Requires: /usr/bin/wc /bin/sh
-Conflicts: jre-1.8.0-oracle java-1.8.0-openjdk java-1.8.0-openjdk-devel
+Conflicts: jre-1.8.0 java-1.8.0-openjdk
 BuildRequires: wget
 
 %description
@@ -60,7 +60,7 @@ and components that can be deployed with the Java Platform Standard
 Edition Runtime Environment.
 
 %prep
-%setup -c -T -n jdk-%{version}_%{java_rel}
+%setup -c -T -n %{name}_%{java_rel}
 
 bash %{S:100} %{_java_ver}_%{_java_rel} %{_arch}
 
@@ -86,11 +86,11 @@ tar xvfpz %{S:4}
 cp -af ../include ../src.zip ./
 
 if [ "%{_arch}" = "x86_64" ]; then
-	find . -type d | sed -e 's!^\.!\%dir %{_java_home}/jdk-%{version}_%{java_rel}/x86_64!g' > /tmp/jdk.list
-	find . -type f -o -type l | sed -e 's!^\.!%{_java_home}/jdk-%{version}_%{java_rel}/x86_64!g' >> /tmp/jdk.list
+	find . -type d | sed -e 's!^\.!\%dir %{_java_home}/%{name}_%{java_rel}/x86_64!g' > /tmp/jdk.list
+	find . -type f -o -type l | sed -e 's!^\.!%{_java_home}/%{name}_%{java_rel}/x86_64!g' >> /tmp/jdk.list
 else
-	find . -type d | sed -e 's!^\.!\%dir %{_java_home}/jdk-%{version}_%{java_rel}/i386!g' > /tmp/jdk.list
-	find . -type f -o -type l | sed -e 's!^\.!%{_java_home}/jdk-%{version}_%{java_rel}/i386!g' >> /tmp/jdk.list
+	find . -type d | sed -e 's!^\.!\%dir %{_java_home}/%{name}_%{java_rel}/i386!g' > /tmp/jdk.list
+	find . -type f -o -type l | sed -e 's!^\.!%{_java_home}/%{name}_%{java_rel}/i386!g' >> /tmp/jdk.list
 fi
 
 popd
@@ -101,8 +101,8 @@ popd
 
 %{__mkdir_p} -p %{buildroot}%{_sysconfdir}/profile.d
 
-%{__install} -m755 %{S:1} %{buildroot}%{_sysconfdir}/profile.d/jdk.csh
-%{__install} -m755 %{S:2} %{buildroot}%{_sysconfdir}/profile.d/jdk.sh
+%{__install} -m644 %{S:1} %{buildroot}%{_sysconfdir}/profile.d/jdk.csh
+%{__install} -m644 %{S:2} %{buildroot}%{_sysconfdir}/profile.d/jdk.sh
 
 if [ "%{_arch}" = "x86_64" ]; then
 	pushd x86_64
@@ -112,8 +112,8 @@ else
 	carch="i386"
 fi
 
-%{__mkdir_p} -p %{buildroot}%{_java_home}/jdk-%{version}_%{java_rel}/${carch}
-cp -af * %{buildroot}%{_java_home}/jdk-%{version}_%{java_rel}/${carch}/
+%{__mkdir_p} -p %{buildroot}%{_java_home}/%{name}_%{java_rel}/${carch}
+cp -af * %{buildroot}%{_java_home}/%{name}_%{java_rel}/${carch}/
 popd
 
 %clean
@@ -121,16 +121,15 @@ popd
 %{__rm} -f /tmp/jdk.list
 
 %post
-[ -L "%{_java_home}/latest" ] && %{__rm} -f %{_java_home}/latest
+[ -L "%{_java_home}/default" ] && %{__rm} -f %{_java_home}/default
 if [ "`/bin/uname -m`" = "x86_64" ]; then
-	ln -sf %{_java_home}/jdk-%{version}_%{java_rel}/x86_64 %{_java_home}/latest
+	ln -sf %{_java_home}/%{name}_%{java_rel}/x86_64 %{_java_home}/default
 else
-	ln -sf %{_java_home}/jdk-%{version}_%{java_rel}/i386 %{_java_home}/latest
+	ln -sf %{_java_home}/%{name}_%{java_rel}/i386 %{_java_home}/default
 fi
 
-if [ ! -f "%{_java_home}/default" ]; then
-	ln -sf %{_java_home}/latest %{_java_home}/default
-fi
+%postun
+[ -L "%{_java_home}/default" ] && %{__rm} -f %{_java_home}/default
 
 %files -f /tmp/jdk.list
 %defattr(-,root,root)
@@ -138,8 +137,11 @@ fi
 %{_sysconfdir}/profile.d/jdk.sh
 
 %changelog
-* Wed Dec 27 2017 YoungJoo.Kim <vozlt@sk.com> 1:1.8.0-151%{?dist}
+* Tue Nov 21 2017 Hyunsung.Jang <hyunsung@sk.com> 1:1.8.0-151%{?dist}
 - Update 8u151
+
+* Thu Oct 12 2017 Hyunsung.Jang <hyunsung@sk.com> 1:1.8.0-141%{?dist}
+- Update 8u144
 
 * Tue Aug 09 2016 YoungJoo.Kim <vozlt@sk.com> 1:1.8.0-101%{?dist}
 - Update 8u101

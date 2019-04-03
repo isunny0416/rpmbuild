@@ -1,0 +1,9 @@
+%_signature         gpg
+%_gpg_name          Insun kim
+%packager           Insun kim
+%vendor             insun corp.
+%dist               .insun.el7
+#%_topdir            /usr/src/redhat
+%_topdir            %(echo $HOME)/rpmbuild
+%_sourcedir         %{_topdir}/SOURCES/%{name}
+%debug_package      %{nil}

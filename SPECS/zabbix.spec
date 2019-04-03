@@ -1,11 +1,15 @@
 %define _appdir			/app/zabbix
+%define _appdir_sbindir		%{_appdir}/sbin
+%define _appdir_bindir		%{_appdir}/bin
 %define _app_logdir		%{_appdir}/log
 %define _app_etcdir		%{_appdir}/etc
 %define _app_scriptsdir	%{_appdir}/scripts
 
+%define with_module_sockets 1 
+
 Name:		zabbix
-Version:	3.4.4
-Release: 	3%{?alphatag:.%{alphatag}}%{?dist}
+Version:	3.4.15
+Release: 	1%{?alphatag:.%{alphatag}}%{?dist}
 Summary:	The Enterprise-class open source monitoring solution
 Group:		Applications/Internet
 License:	GPLv2+
@@ -27,6 +31,9 @@ Source15:	zabbix-tmpfiles.conf
 Source16:	zabbix_agentd.conf
 Source17:	userparameter_sktx.conf
 Source18:	scripts.tar.gz
+Source100:	libzbxsockets.so
+Source101:	libzbxsockets.conf
+
 Patch0:		config.patch
 Patch1:		fonts-config.patch
 Patch2:		fping3-sourceip-option.patch
@@ -85,20 +92,6 @@ Obsoletes:			zabbix
 
 %description agent
 Zabbix agent to be installed on monitored systems.
-
-%package get
-Summary:			Zabbix Get
-Group:				Applications/Internet
-
-%description get
-Zabbix get command line utility
-
-%package sender
-Summary:			Zabbix Sender
-Group:				Applications/Internet
-
-%description sender
-Zabbix sender command line utility
 
 %package proxy-mysql
 Summary:			Zabbix proxy for MySQL or MariaDB database
@@ -206,11 +199,13 @@ Zabbix web frontend for MySQL
 
 %prep
 %setup0 -q -a 18 -n zabbix-%{version}%{?alphatag:%{alphatag}}
+
 %patch0 -p1
 %patch1 -p1
 %if 0%{?rhel} >= 7
 %patch2 -p1
 %endif
+
 
 ## remove font file
 rm -f frontends/php/fonts/DejaVuSans.ttf
@@ -428,6 +423,10 @@ cat %{SOURCE3} | sed \
 	install -Dm 0644 -p %{SOURCE15} $RPM_BUILD_ROOT%{_prefix}/lib/tmpfiles.d/zabbix-java-gateway.conf
 %endif
 
+#%if 0%{?with_module_sockets}
+install -Dm 0644 -p %{SOURCE100} $RPM_BUILD_ROOT%{_libdir}/zabbix/moudles/libzbxsockets.so
+install -Dm 0644 -p %{SOURCE101} $RPM_BUILD_ROOT%{_sysconfdir}/zabbix/zabbix_agentd.d/libzbxsockets.conf
+#%endif
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -471,21 +470,11 @@ getent passwd zabbix > /dev/null || \
 # create link app direcotry
 if [ "$1" = 1 ]; then
 	%__ln_s %{_sbindir}/zabbix_agentd %{_appdir}/sbin/zabbix_agentd
+	%__ln_s %{_bindir}/zabbix_get /app/zabbix/bin/zabbix_get
+	%__ln_s %{_bindir}/zabbix_sender /app/zabbix/bin/zabbix_sender
 	[ -d "%{_app_etcdir}" ] || %__ln_s %{_sysconfdir}/zabbix %{_app_etcdir}
 	[ -d "%{_app_logdir}" ] || %__ln_s %{_localstatedir}/log/zabbix %{_app_logdir}
 	[ -d "%{_app_scriptsdir}" ] || %__ln_s /usr/lib/zabbix/externalscripts %{_app_scriptsdir}
-fi
-:
-
-%post get
-if [ "$1" = 1 ]; then
-	%__ln_s %{_bindir}/zabbix_get /app/zabbix/bin/zabbix_get
-fi
-:
-
-%post sender
-if [ "$1" = 1 ]; then
-	%__ln_s %{_bindir}/zabbix_sender /app/zabbix/bin/zabbix_sender
 fi
 :
 
@@ -546,17 +535,7 @@ if [ "$1" = 0 ]; then
 	%endif
 	# remove app link file
 	%__rm -f /app/zabbix/sbin/zabbix_agentd
-fi
-:
-
-%preun get
-if [ "$1" = 0 ]; then
 	%__rm -f /app/zabbix/bin/zabbix_get
-fi
-:
-
-%preun sender
-if [ "$1" = 0 ]; then
 	%__rm -f /app/zabbix/bin/zabbix_sender
 fi
 :
@@ -649,6 +628,7 @@ fi
 %endif
 
 %files agent
+# agent file list
 %defattr(-,root,root,-)
 %doc AUTHORS ChangeLog COPYING NEWS README
 %config(noreplace) %{_sysconfdir}/zabbix/zabbix_agentd.conf
@@ -672,8 +652,7 @@ fi
 %dir /app/zabbix
 %dir /app/zabbix/sbin
 
-%files get
-%defattr(-,root,root,-)
+# get file list
 %doc AUTHORS ChangeLog COPYING NEWS README
 %{_bindir}/zabbix_get
 %{_mandir}/man1/zabbix_get.1*
@@ -681,14 +660,19 @@ fi
 %dir /app/zabbix
 %dir /app/zabbix/bin
 
-%files sender
-%defattr(-,root,root,-)
+# sender file list
 %doc AUTHORS ChangeLog COPYING NEWS README
 %{_bindir}/zabbix_sender
 %{_mandir}/man1/zabbix_sender.1*
 # app link directory
 %dir /app/zabbix
 %dir /app/zabbix/bin
+
+# zabbix module sockets
+%if 0%{?with_module_sockets}
+  %{_libdir}/zabbix/modules/libzbxsockets.so
+  %{_sysconfdir}/zabbix/zabbix_agentd.d/libzbxsockets.conf
+%endif
 
 %files proxy-mysql
 %defattr(-,root,root,-)
@@ -769,6 +753,10 @@ fi
 %endif
 
 %changelog
+* Mon Dec 1 2018 Insun.Kim <insun.kim@sk.com> - 3.4.15.1
+- zabbix version up (3.4.4 -> 3.4.15)
+- zabbix agent, get, sender integration
+
 * Fri Dec 28 2017 Insun.Kim <insun.kim@sk.com> - 3.4.4-3
 - zabbix server ip 172.21.89.35 -> 172.21.89.135 change, zabbix_agentd.conf 
 

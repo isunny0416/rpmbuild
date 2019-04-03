@@ -1,6 +1,0 @@
-# Run the sktx-deploy jobs
-SHELL=/bin/bash
-PATH=/sbin:/bin:/usr/sbin:/usr/bin
-MAILTO=
-
-0 */6 * * * root sktx-deploy --sync --random-delay=300 &> /var/log/sktx-deploy.log

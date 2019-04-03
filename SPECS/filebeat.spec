@@ -7,14 +7,14 @@
 AutoReqProv:    no
 Name:           filebeat
 Version:        5.4.3
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        Lightweight Data Shippers
 
 Group:          Applications/System
 License:        ASL2.0	
 
 Source0:        %{name}-%{version}.rpm
-Source1:		filebeat.infra.yml
+Source1:	filebeat.infra.yml
 Source2:        filebeat.sysconfig
 Source3:        filebeat.logrotate
 Source4:        filebeat.init
@@ -58,7 +58,10 @@ popd
 %{__install} -m644 %{SOURCE6} %{buildroot}%{_sysconfdir}/filebeat/filebeat.external.yml
 
 %if 0%{?rhel} >= 7
-    %{__install} -m755 %{SOURCE5} %{buildroot}%{_unitdir}/filebeat.service
+   %{__install} -m755 %{SOURCE5} %{buildroot}%{_unitdir}/filebeat.service
+   %{__mkdir_p} %{buildroot}/%{_libexecdir}/filebeat
+   %{__install} -m755 %{SOURCE4} %{buildroot}%{_libexecdir}/filebeat/filebeat
+
 %else
     %{__install} -m755 %{SOURCE4} %{buildroot}%{_sysconfdir}/init.d/filebeat
 %endif
@@ -103,14 +106,22 @@ fi
 	fi
 %endif
 
-%files -f %{_tmppath}/filebeat.flist 
-%dir %attr(0755, root, root) %{_sysconfdir}/filebeat/conf.d/
-%dir %attr(0755, root, root) %{_appdir}
-%attr(0644,root, root) %config(noreplace) %{_sysconfdir}/filebeat/filebeat.external.yml
-%attr(0664,root, root) %config(noreplace) %{_sysconfdir}/filebeat/conf.d/filebeat.infra.yml
-%attr(0644,root, root) %config(noreplace) %{_sysconfdir}/sysconfig/filebeat
+%files -f %{_tmppath}/filebeat.flist
+%dir %attr(0755,root,root) %{_sysconfdir}/filebeat/conf.d/
+%dir %attr(0755,root,root) %{_appdir}
+%attr(0644,root,root) %config(noreplace) %{_sysconfdir}/filebeat/filebeat.external.yml
+%attr(0644,root,root) %config(noreplace) %{_sysconfdir}/filebeat/conf.d/filebeat.infra.yml
+%attr(0644,root,root) %config(noreplace) %{_sysconfdir}/sysconfig/filebeat
+%if 0%{?rhel} >= 7
+	%attr(0644,root,root) %{_unitdir}/filebeat.service
+	%dir %attr(0775,root,root) %{_libexecdir}/filebeat
+	%attr(0755,root,root) %{_libexecdir}/filebeat/filebeat
+%endif
 
 %changelog
+* Fri Mar 9 2018 Insun.Kim <insun.kim@sk.com> - 5.4.3-3
+- add filebeat libexec file (case. centos7)
+- change filebeat.server
 * Mon Feb 12 2018 Insun.Kim <insun.kim@sk.com> - 5.4.3-2
 - change systemd file
 * Fri Jan 13 2018 Insun.Kim <insun.kim@sk.com> - 5.4.3-1

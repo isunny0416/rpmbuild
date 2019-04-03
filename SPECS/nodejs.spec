@@ -1,8 +1,8 @@
-%define _npm_repo_url	http://172.21.89.31:8081/repository/npm-proxy-repository/
+%define _npm_repo_url    http://172.21.89.31:8081/repository/npm-proxy-repository/
 
 Name: nodejs
-Version: 8.4.0
-Release: 3%{?dist}
+Version: 7.9.0
+Release: 2%{?dist}
 Summary: JavaScript runtime
 License: MIT and ASL 2.0 and ISC and BSD
 Group: Development/Languages
@@ -15,16 +15,14 @@ ExclusiveArch: %{ix86} x86_64 %{arm}
 Source0: node-v%{version}.tar.xz
 #Source1: icu4c-57_1-src.tgz
 
-Patch1: glibc_tls_thread_local_fix.patch
-
-%if 0%{?rhel} == 6 || 0%{?rhel} == 7
+%if 0%{?rhel} == 6
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-buildroot
 BuildArch: %{_target_cpu}
 BuildRequires: scl-utils
 BuildRequires: python27
 BuildRequires: python27-python
-BuildRequires: devtoolset-6-gcc >= 4.9.4
-BuildRequires: devtoolset-6-gcc-c++ >= 4.9.4
+BuildRequires: devtoolset-3-gcc >= 4.8
+BuildRequires: devtoolset-3-gcc-c++ >= 4.8
 %else
 BuildRequires: python
 %endif
@@ -67,8 +65,10 @@ The API documentation for the Node.js JavaScript runtime.
 %prep
 %setup -q -n node-v%{version}
 
-%if 0%{?rhel} == 6
-%patch1 -p1
+%if 0%{?rhel} == 5
+%patch1 -p0
+%patch2 -p0
+%patch3 -p0
 %endif
 
 %build
@@ -78,8 +78,8 @@ The API documentation for the Node.js JavaScript runtime.
 export CFLAGS='-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fstack-protector-strong --param=ssp-buffer-size=4 -grecord-gcc-switches -mtune=generic -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64'
 export CXXFLAGS='-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fstack-protector-strong --param=ssp-buffer-size=4 -grecord-gcc-switches -mtune=generic -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64'
 
-%if 0%{?rhel} == 6 || 0%{?rhel} == 7
-. /opt/rh/devtoolset-6/enable && . /opt/rh/python27/enable
+%if 0%{?rhel} == 6
+. /opt/rh/devtoolset-3/enable && . /opt/rh/python27/enable
 ./configure --prefix=%{_prefix} \
            --without-dtrace
 %else
@@ -105,7 +105,8 @@ rm -rf %{buildroot}
 rm -rf %{buildroot}/%{_prefix}/lib/dtrace
 
 # Set the binary permissions properly
-chmod 0755 %{buildroot}/%{_bindir}/*
+chmod 0755 %{buildroot}/%{_bindir}/node
+chmod 0755 %{buildroot}/%{_bindir}/npm
 
 # Install the debug binary and set its permissions
 # install -Dpm0755 out/Debug/node %{buildroot}/%{_bindir}/node_g
@@ -130,7 +131,8 @@ fi
 
 %files
 %doc AUTHORS LICENSE *.md
-%{_bindir}/*
+%{_bindir}/node
+%{_bindir}/npm
 %{_mandir}/man1/node.*
 %dir %{_prefix}/lib/node_modules
 %{_prefix}/lib/node_modules/*
@@ -147,12 +149,9 @@ fi
 %{_defaultdocdir}/%{name}-docs-%{version}
 
 %changelog
-* Thu Jan 23 2018 Insun Kim <insun.kim@sk.com> - 8.4.0-3
-- change npm private repository url change
-
-* Thu Jan 18 2018 Insun Kim <insun.kim@sk.com> - 8.4.0-2
+* Thu Mar 20 2018 Insun Kim <insun.kim@sk.com> - 7.9.0-2
 - change npm private repository
 
-* Tue Aug 15 2017 Chris Lea <chl@nodesource.com> - 8.4.0-1
-- https://nodejs.org/en/blog/release/v8.4.0/
+* Tue Apr 18 2017 Chris Lea <chl@nodesource.com> - 7.9.0-1
+- https://nodejs.org/en/blog/release/v7.9.0/
 
