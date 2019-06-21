@@ -32,7 +32,9 @@ export GOPATH=%{go_path}
 export PATH=${PATH}:%{go_path}/bin
 
 pushd %{go_package_src}
-XC_ARCH=amd64 XC_OS=linux make bin
+[ "%{_arch}" == "x86_64" ] && export XC_ARCH=amd64 || export XC_ARCH=386
+export XC_OS=linux 
+make bin
 popd
 
 %install
