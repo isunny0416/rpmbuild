@@ -2,8 +2,9 @@
 %_gpg_name          Insun kim
 %packager           Insun kim
 %vendor             insun corp.
-%dist               .insun.el7
+%dist               .el7.ie
 #%_topdir            /usr/src/redhat
 %_topdir            %(echo $HOME)/rpmbuild
 %_sourcedir         %{_topdir}/SOURCES/%{name}
+%buildroot	    %{_buildrootdir}/%{name}-%{version}
 %debug_package      %{nil}
