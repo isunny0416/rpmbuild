@@ -35,6 +35,7 @@ pushd %{go_package_src}
 [ "%{_arch}" == "x86_64" ] && export XC_ARCH=amd64 || export XC_ARCH=386
 export XC_OS=linux 
 make bin
+# or make dev
 popd
 
 %install
