@@ -35,7 +35,6 @@ pushd %{go_package_src}
 [ "%{_arch}" == "x86_64" ] && export XC_ARCH=amd64 || export XC_ARCH=386
 export XC_OS=linux 
 make bin
-# or make dev
 popd
 
 %install
@@ -44,6 +43,7 @@ find %{go_path}/bin -name "%{name}*" -exec install {} %{buildroot}%{_bindir} \;
 
 %clean
 %{__rm} -rf %{go_path}
+%{__rm} -rf %{_builddir}/%{name}-%{version}
 %{__rm} -rf %{buildroot}
 
 %files
