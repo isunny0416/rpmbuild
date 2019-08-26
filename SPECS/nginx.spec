@@ -1,710 +1,832 @@
-#
-%define nginx_home %{_localstatedir}/cache/nginx
-%define nginx_user nobody
-%define nginx_group nobody
-%define nginx_loggroup root
+%global  _hardened_build     1
+%global  nginx_user          nobody
 
-%define nginx_module_vts_version 0.1.15
-%define nginx_module_lua_version 0.10.10
-
-# distribution specific definitions
-%define use_systemd (0%{?fedora} && 0%{?fedora} >= 18) || (0%{?rhel} && 0%{?rhel} >= 7) || (0%{?suse_version} == 1315)
-
-%if 0%{?rhel}  == 5
-Group: System Environment/Daemons
-Requires(pre): shadow-utils
-Requires: initscripts >= 8.36
-Requires(post): chkconfig
-Requires: openssl
-Requires: nginx-module-geoip nginx-module-vts nginx-module-lua
-BuildRequires: openssl-devel lua-devel
+# gperftools exist only on selected arches
+%ifnarch s390 s390x
+%global with_gperftools 1
 %endif
 
-%if 0%{?rhel}  == 6
-Group: System Environment/Daemons
-Requires(pre): shadow-utils
-Requires: initscripts >= 8.36
-Requires(post): chkconfig
-Requires: openssl >= 1.0.1
-Requires: nginx-module-geoip nginx-module-vts nginx-module-lua
-BuildRequires: openssl-devel >= 1.0.1 lua-devel
-%define with_http2 1
+%global with_aio 1
+%global with_lua 1
+
+%if 0%{?fedora} > 22
+%global with_mailcap_mimetypes 1
 %endif
 
-%if 0%{?rhel}  == 7
-Group: System Environment/Daemons
-Requires(pre): shadow-utils
-Requires: systemd
-Requires: openssl >= 1.0.1
-BuildRequires: systemd
-Requires: nginx-module-geoip nginx-module-vts nginx-module-lua
-BuildRequires: openssl-devel >= 1.0.1 lua-devel
-Epoch: 1
-%define with_http2 1
+%define lua_version 0.10.15
+%define luajit_lib_dir /usr/lib64
+%define luajit_inc_dir /usr/include/luajit-2.0
+
+Name:              nginx
+Epoch:             1
+Version:           1.17.3
+Release:           1%{?dist}
+
+Summary:           A high performance web server and reverse proxy server
+Group:             System Environment/Daemons
+# BSD License (two clause)
+# http://www.freebsd.org/copyright/freebsd-license.html
+License:           BSD
+URL:               http://nginx.org/
+
+Source0:           https://nginx.org/download/nginx-%{version}.tar.gz
+Source1:           https://nginx.org/download/nginx-%{version}.tar.gz.asc
+Source2:           https://github.com/openresty/lua-nginx-module/archive/v%{lua_version}/lua-nginx-module-%{lua_version}.tar.gz
+Source10:          nginx.service
+Source11:          nginx.logrotate
+Source12:          nginx.conf
+Source13:          nginx-upgrade
+Source14:          nginx-upgrade.8
+Source100:         index.html
+Source101:         poweredby.png
+Source102:         nginx-logo.png
+Source103:         404.html
+Source104:         50x.html
+Source200:         README.dynamic
+Source210:         UPGRADE-NOTES-1.6-to-1.10
+
+# removes -Werror in upstream build scripts.  -Werror conflicts with
+# -D_FORTIFY_SOURCE=2 causing warnings to turn into errors.
+Patch0:            nginx-auto-cc-gcc.patch
+
+%if 0%{?with_gperftools}
+BuildRequires:     gperftools-devel
+%endif
+BuildRequires:     openssl-devel
+BuildRequires:     pcre-devel
+BuildRequires:     zlib-devel
+
+Requires:          nginx-filesystem = %{epoch}:%{version}-%{release}
+
+%if 0%{?rhel} || 0%{?fedora} < 24
+# Introduced at 1:1.10.0-1 to ease upgrade path. To be removed later.
+Requires:          nginx-all-modules = %{epoch}:%{version}-%{release}
 %endif
 
-%if 0%{?suse_version} == 1315
-Group: Productivity/Networking/Web/Servers
-BuildRequires: libopenssl-devel
-BuildRequires: systemd
-Requires(pre): shadow
-Requires: systemd
-%define with_http2 1
-%define nginx_loggroup trusted
+Requires:          openssl
+Requires:          pcre
+Requires(pre):     nginx-filesystem
+%if 0%{?with_mailcap_mimetypes}
+Requires:          nginx-mimetypes
 %endif
+Provides:          webserver
 
-# end of distribution specific definitions
-
-%define WITH_CC_OPT $(echo %{optflags} $(pcre-config --cflags)) -fPIC
-%define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -pie
-
-%define COMMON_CONFIGURE_ARGS $(echo "\
-        --prefix=%{_sysconfdir}/nginx \
-        --sbin-path=%{_sbindir}/nginx \
-        --modules-path=%{_libdir}/nginx/modules \
-        --conf-path=%{_sysconfdir}/nginx/nginx.conf \
-        --error-log-path=%{_localstatedir}/log/nginx/error.log \
-        --http-log-path=%{_localstatedir}/log/nginx/access.log \
-        --pid-path=%{_localstatedir}/run/nginx.pid \
-        --lock-path=%{_localstatedir}/run/nginx.lock \
-        --http-client-body-temp-path=%{_localstatedir}/cache/nginx/client_temp \
-        --http-proxy-temp-path=%{_localstatedir}/cache/nginx/proxy_temp \
-        --http-fastcgi-temp-path=%{_localstatedir}/cache/nginx/fastcgi_temp \
-        --http-uwsgi-temp-path=%{_localstatedir}/cache/nginx/uwsgi_temp \
-        --http-scgi-temp-path=%{_localstatedir}/cache/nginx/scgi_temp \
-        --user=%{nginx_user} \
-        --group=%{nginx_group} \
-        --with-http_ssl_module \
-        --with-http_realip_module \
-        --with-http_addition_module \
-        --with-http_sub_module \
-        --with-http_dav_module \
-        --with-http_flv_module \
-        --with-http_mp4_module \
-        --with-http_gunzip_module \
-        --with-http_gzip_static_module \
-        --with-http_random_index_module \
-        --with-http_secure_link_module \
-        --with-http_stub_status_module \
-        --with-http_auth_request_module \
-        --with-http_xslt_module=dynamic \
-        --with-http_image_filter_module=dynamic \
-        --with-http_geoip_module=dynamic \
-        --add-dynamic-module=../nginx-module-vts-%{nginx_module_vts_version} \
-        --add-dynamic-module=../lua-nginx-module-%{nginx_module_lua_version} \
-        --with-threads \
-        --with-stream \
-        --with-stream_ssl_module \
-        --with-http_slice_module \
-        --with-mail \
-        --with-mail_ssl_module \
-        --with-file-aio \
-        %{?with_http2:--with-http_v2_module}")
-   
-Summary: High performance web server
-Name: nginx
-Version: 1.12.2
-Release: 1%{?dist}
-Vendor: nginx inc.
-URL: http://nginx.org/
-
-Source0: http://nginx.org/download/%{name}-%{version}.tar.gz
-Source1: logrotate
-Source2: nginx.init.in
-Source3: nginx.sysconf
-Source4: nginx.conf
-Source5: vhosts.conf
-Source7: nginx-debug.sysconf
-Source8: nginx.service
-Source9: nginx.upgrade.sh
-Source10: nginx.suse.logrotate
-Source11: nginx-debug.service
-Source12: COPYRIGHT
-Source20: vhosts_ssl.conf
-Source21: common.conf
-Source22: healthcheck.conf
-
-Source50: error.shtml
-Source100: https://github.com/vozlt/nginx-module-vts/nginx-module-vts-%{nginx_module_vts_version}.tar.bz2
-Source101: https://github.com/openresty/lua-nginx-module/lua-nginx-module-%{nginx_module_lua_version}.tar.bz2
-
-License: 2-clause BSD-like license
-
-BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
-BuildRequires: zlib-devel
-BuildRequires: pcre-devel
-
-Provides: webserver
+BuildRequires:     systemd
+Requires(post):    systemd
+Requires(preun):   systemd
+Requires(postun):  systemd
 
 %description
-nginx [engine x] is an HTTP and reverse proxy server, as well as
-a mail proxy server.
+Nginx is a web server and a reverse proxy server for HTTP, SMTP, POP3 and
+IMAP protocols, with a strong focus on high concurrency, performance and low
+memory usage.
 
-%if 0%{?suse_version} == 1315
-%debug_package
+%package all-modules
+Group:             System Environment/Daemons
+Summary:           A meta package that installs all available Nginx modules
+BuildArch:         noarch
+
+Requires:          nginx-mod-http-geoip = %{epoch}:%{version}-%{release}
+Requires:          nginx-mod-http-image-filter = %{epoch}:%{version}-%{release}
+Requires:          nginx-mod-http-perl = %{epoch}:%{version}-%{release}
+Requires:          nginx-mod-http-xslt-filter = %{epoch}:%{version}-%{release}
+Requires:          nginx-mod-mail = %{epoch}:%{version}-%{release}
+Requires:          nginx-mod-stream = %{epoch}:%{version}-%{release}
+%if 0%{?with_lua}
+Requires:          nginx-mod-http-lua = %{epoch}:%{version}-%{release}
 %endif
 
-%package module-xslt
-%if 0%{?suse_version:1}
-Group: Productivity/Networking/Web/Servers
-BuildRequires: libxslt-devel
-%else
-Group: System Environment/Daemons
-BuildRequires: libxslt-devel
+%description all-modules
+%{summary}.
+%if 0%{?rhel}
+The main nginx package depends on this to ease the upgrade path. After a grace
+period of several months, modules will become optional.
 %endif
-Requires: nginx = %{epoch}:%{version}-%{release}
-Summary: nginx xslt module
-%description module-xslt
-Dynamic xslt module for nginx.
-
-%package module-image-filter
-%if 0%{?suse_version:1}
-Group: Productivity/Networking/Web/Servers
-BuildRequires: gd-devel
-%else
-Group: System Environment/Daemons
-BuildRequires: gd-devel
+%if 0%{?fedora} && 0%{?fedora} < 24
+The main nginx package depends on this to ease the upgrade path. Starting from
+Fedora 24, modules are optional.
 %endif
-Requires: nginx = %{epoch}:%{version}-%{release}
-Summary: nginx image filter module
-%description module-image-filter
-Dynamic image filter module for nginx.
 
-%package module-geoip
-%if 0%{?suse_version:1}
-Group: Productivity/Networking/Web/Servers
-BuildRequires: libGeoIP-devel
-%else
-Group: System Environment/Daemons
-BuildRequires: GeoIP-devel
+%package filesystem
+Group:             System Environment/Daemons
+Summary:           The basic directory layout for the Nginx server
+BuildArch:         noarch
+Requires(pre):     shadow-utils
+
+%description filesystem
+The nginx-filesystem package contains the basic directory layout
+for the Nginx server including the correct permissions for the
+directories.
+
+%package mod-http-geoip
+Group:             System Environment/Daemons
+Summary:           Nginx HTTP geoip module
+BuildRequires:     GeoIP-devel
+Requires:          nginx
+Requires:          GeoIP
+
+%description mod-http-geoip
+%{summary}.
+
+%package mod-http-image-filter
+Group:             System Environment/Daemons
+Summary:           Nginx HTTP image filter module
+BuildRequires:     gd-devel
+Requires:          nginx
+Requires:          gd
+
+%description mod-http-image-filter
+%{summary}.
+
+%package mod-http-perl
+Group:             System Environment/Daemons
+Summary:           Nginx HTTP perl module
+BuildRequires:     perl-devel
+%if 0%{?fedora} >= 24
+BuildRequires:     perl-generators
 %endif
-Requires: nginx = %{epoch}:%{version}-%{release}
-Summary: nginx geoip module
-%description module-geoip
-Dynamic geoip module for nginx.
+BuildRequires:     perl(ExtUtils::Embed)
+Requires:          nginx
+Requires:          perl(:MODULE_COMPAT_%(eval "`%{__perl} -V:version`"; echo $version))
 
-%package module-vts
-%if 0%{?suse_version:1}
-Group: Productivity/Networking/Web/Servers
-%else
-Group: System Environment/Daemons
-%endif
-Requires: nginx = %{epoch}:%{version}-%{release}
-Summary: nginx vhost traffic status module
-%description module-vts
-Dynamic vhost traffic status module for nginx.
+%description mod-http-perl
+%{summary}.
 
-%package module-lua
-%if 0%{?suse_version:1}
-Group: Productivity/Networking/Web/Servers
-%else
-Group: System Environment/Daemons
-%endif
-Requires: nginx = %{epoch}:%{version}-%{release}
-Summary: nginx lua module
-%description module-lua
-Embed the power of Lua into Nginx HTTP Servers.
+%package mod-http-xslt-filter
+Group:             System Environment/Daemons
+Summary:           Nginx XSLT module
+BuildRequires:     libxslt-devel
+Requires:          nginx
 
+%description mod-http-xslt-filter
+%{summary}.
+
+%package mod-mail
+Group:             System Environment/Daemons
+Summary:           Nginx mail modules
+Requires:          nginx
+
+%description mod-mail
+%{summary}.
+
+%package mod-stream
+Group:             System Environment/Daemons
+Summary:           Nginx stream modules
+Requires:          nginx
+
+%description mod-stream
+%{summary}.
+
+%package mod-http-lua
+Group:             System Environment/Daemons
+Summary:           nginx lua module
+BuildRequires:     luajit-devel
+Requires:          nginx
+
+%description mod-http-lua
+%{summary}.
 
 
 %prep
 %setup -q
-%setup -D -q -T -b 100 -b 101
-cp %{SOURCE2} .
-sed -e 's|%%DEFAULTSTART%%|2 3 4 5|g' -e 's|%%DEFAULTSTOP%%|0 1 6|g' \
-    -e 's|%%PROVIDES%%|nginx|g' < %{SOURCE2} > nginx.init
-sed -e 's|%%DEFAULTSTART%%||g' -e 's|%%DEFAULTSTOP%%|0 1 2 3 4 5 6|g' \
-    -e 's|%%PROVIDES%%|nginx-debug|g' < %{SOURCE2} > nginx-debug.init
+%setup -D -q -T -b 2 
+%patch0 -p0
+
+cp %{SOURCE200} .
+cp %{SOURCE210} .
+
+%if 0%{?rhel} < 8
+sed -i -e 's#KillMode=.*#KillMode=process#g' %{SOURCE10}
+sed -i -e 's#PROFILE=SYSTEM#HIGH:!aNULL:!MD5#' %{SOURCE12}
+%endif
+
+%if 0%{?with_lua}
+export LUAJIT_LIB=%{luajit_lib_dir}
+export LUAJIT_INC=%{luajit_inc_dir}
+%endif
+
 
 %build
-./configure %{COMMON_CONFIGURE_ARGS} \
-    --with-cc-opt="%{WITH_CC_OPT}" \
-    --with-ld-opt="%{WITH_LD_OPT}" \
-    --with-debug
-make %{?_smp_mflags}
-%{__mv} %{_builddir}/%{name}-%{version}/objs/nginx \
-    %{_builddir}/%{name}-%{version}/objs/nginx-debug
-%{__mv} %{_builddir}/%{name}-%{version}/objs/ngx_http_xslt_filter_module.so \
-    %{_builddir}/%{name}-%{version}/objs/ngx_http_xslt_filter_module-debug.so
-%{__mv} %{_builddir}/%{name}-%{version}/objs/ngx_http_image_filter_module.so \
-    %{_builddir}/%{name}-%{version}/objs/ngx_http_image_filter_module-debug.so
-%{__mv} %{_builddir}/%{name}-%{version}/objs/ngx_http_geoip_module.so \
-    %{_builddir}/%{name}-%{version}/objs/ngx_http_geoip_module-debug.so
+# nginx does not utilize a standard configure script.  It has its own
+# and the standard configure options cause the nginx configure script
+# to error out.  This is is also the reason for the DESTDIR environment
+# variable.
+pwd
+export DESTDIR=%{buildroot}
+./configure \
+    --prefix=%{_datadir}/nginx \
+    --sbin-path=%{_sbindir}/nginx \
+    --modules-path=%{_libdir}/nginx/modules \
+    --conf-path=%{_sysconfdir}/nginx/nginx.conf \
+    --error-log-path=%{_localstatedir}/log/nginx/error.log \
+    --http-log-path=%{_localstatedir}/log/nginx/access.log \
+    --http-client-body-temp-path=%{_localstatedir}/lib/nginx/tmp/client_body \
+    --http-proxy-temp-path=%{_localstatedir}/lib/nginx/tmp/proxy \
+    --http-fastcgi-temp-path=%{_localstatedir}/lib/nginx/tmp/fastcgi \
+    --http-uwsgi-temp-path=%{_localstatedir}/lib/nginx/tmp/uwsgi \
+    --http-scgi-temp-path=%{_localstatedir}/lib/nginx/tmp/scgi \
+    --pid-path=/run/nginx.pid \
+    --lock-path=/run/lock/subsys/nginx \
+    --user=%{nginx_user} \
+    --group=%{nginx_user} \
+%if 0%{?with_aio}
+    --with-file-aio \
+%endif
+    --with-ipv6 \
+    --with-http_auth_request_module \
+    --with-http_ssl_module \
+    --with-http_v2_module \
+    --with-http_realip_module \
+    --with-http_addition_module \
+    --with-http_xslt_module=dynamic \
+    --with-http_image_filter_module=dynamic \
+    --with-http_geoip_module=dynamic \
+    --with-http_sub_module \
+    --with-http_dav_module \
+    --with-http_flv_module \
+    --with-http_mp4_module \
+    --with-http_gunzip_module \
+    --with-http_gzip_static_module \
+    --with-http_random_index_module \
+    --with-http_secure_link_module \
+    --with-http_degradation_module \
+    --with-http_slice_module \
+    --with-http_stub_status_module \
+    --with-http_perl_module=dynamic \
+    --with-mail=dynamic \
+    --with-mail_ssl_module \
+    --with-pcre \
+    --with-pcre-jit \
+    --with-stream=dynamic \
+    --with-stream_ssl_module \
+%if 0%{?with_gperftools}
+    --with-google_perftools_module \
+%endif
+    --with-debug \
+    --with-cc-opt="%{optflags} $(pcre-config --cflags)" \
+    --with-ld-opt="$RPM_LD_FLAGS -Wl,-E,-rpath,/usr/lib64" \
+%if 0%{?with_lua}
+    --add-dynamic-module=%{_builddir}/lua-nginx-module-%{lua_version}
+%endif
 
-# addons
-%{__mv} %{_builddir}/%{name}-%{version}/objs/ngx_http_vhost_traffic_status_module.so \
-    %{_builddir}/%{name}-%{version}/objs/ngx_http_vhost_traffic_status_module-debug.so
-
-./configure %{COMMON_CONFIGURE_ARGS} \
-    --with-cc-opt="%{WITH_CC_OPT}" \
-    --with-ld-opt="%{WITH_LD_OPT}"
 make %{?_smp_mflags}
+
 
 %install
-%{__rm} -rf $RPM_BUILD_ROOT
-%{__make} DESTDIR=$RPM_BUILD_ROOT install
+make install DESTDIR=%{buildroot} INSTALLDIRS=vendor
 
-%{__mkdir} -p $RPM_BUILD_ROOT%{_datadir}/nginx
-%{__mv} $RPM_BUILD_ROOT%{_sysconfdir}/nginx/html $RPM_BUILD_ROOT%{_datadir}/nginx/
-%{__cp} %{SOURCE50} $RPM_BUILD_ROOT%{_datadir}/nginx/html/
+find %{buildroot} -type f -name .packlist -exec rm -f '{}' \;
+find %{buildroot} -type f -name perllocal.pod -exec rm -f '{}' \;
+find %{buildroot} -type f -empty -exec rm -f '{}' \;
+find %{buildroot} -type f -iname '*.so' -exec chmod 0755 '{}' \;
 
-%{__rm} -f $RPM_BUILD_ROOT%{_sysconfdir}/nginx/*.default
-%{__rm} -f $RPM_BUILD_ROOT%{_sysconfdir}/nginx/fastcgi.conf
+install -p -D -m 0644 %{SOURCE10} \
+    %{buildroot}%{_unitdir}/nginx.service
+install -p -D -m 0644 %{SOURCE11} \
+    %{buildroot}%{_sysconfdir}/logrotate.d/nginx
 
-%{__mkdir} -p $RPM_BUILD_ROOT%{_localstatedir}/log/nginx
-%{__mkdir} -p $RPM_BUILD_ROOT%{_localstatedir}/run/nginx
-%{__mkdir} -p $RPM_BUILD_ROOT%{_localstatedir}/cache/nginx
+install -p -d -m 0755 %{buildroot}%{_sysconfdir}/nginx/conf.d
+install -p -d -m 0755 %{buildroot}%{_sysconfdir}/nginx/default.d
 
-%{__mkdir} -p $RPM_BUILD_ROOT%{_libdir}/nginx/modules
-cd $RPM_BUILD_ROOT%{_sysconfdir}/nginx && \
-    %{__ln_s} ../..%{_libdir}/nginx/modules modules && cd -
+install -p -d -m 0700 %{buildroot}%{_localstatedir}/lib/nginx
+install -p -d -m 0700 %{buildroot}%{_localstatedir}/lib/nginx/tmp
+install -p -d -m 0700 %{buildroot}%{_localstatedir}/log/nginx
 
-%{__mkdir} -p $RPM_BUILD_ROOT%{_datadir}/doc/%{name}-%{version}
-%{__install} -m 644 -p %{SOURCE12} \
-    $RPM_BUILD_ROOT%{_datadir}/doc/%{name}-%{version}/
+install -p -d -m 0755 %{buildroot}%{_datadir}/nginx/html
+install -p -d -m 0755 %{buildroot}%{_datadir}/nginx/modules
+install -p -d -m 0755 %{buildroot}%{_libdir}/nginx/modules
 
-%{__mkdir} -p $RPM_BUILD_ROOT%{_sysconfdir}/nginx/conf.d
-%{__rm} $RPM_BUILD_ROOT%{_sysconfdir}/nginx/nginx.conf
-%{__install} -m 644 -p %{SOURCE4} \
-    $RPM_BUILD_ROOT%{_sysconfdir}/nginx/nginx.conf
-%{__install} -m 644 -p %{SOURCE5} \
-    $RPM_BUILD_ROOT%{_sysconfdir}/nginx/conf.d/vhosts.conf
-%{__install} -m 644 -p %{SOURCE20} \
-    $RPM_BUILD_ROOT%{_sysconfdir}/nginx/conf.d/vhosts_ssl.conf
+install -p -m 0644 %{SOURCE12} \
+    %{buildroot}%{_sysconfdir}/nginx
+install -p -m 0644 %{SOURCE100} \
+    %{buildroot}%{_datadir}/nginx/html
+install -p -m 0644 %{SOURCE101} %{SOURCE102} \
+    %{buildroot}%{_datadir}/nginx/html
+install -p -m 0644 %{SOURCE103} %{SOURCE104} \
+    %{buildroot}%{_datadir}/nginx/html
 
-%{__mkdir} -p $RPM_BUILD_ROOT%{_sysconfdir}/nginx/include.d
-%{__install} -m 644 -p %{SOURCE21} \
-    $RPM_BUILD_ROOT%{_sysconfdir}/nginx/include.d/common.conf
-%{__install} -m 644 -p %{SOURCE22} \
-    $RPM_BUILD_ROOT%{_sysconfdir}/nginx/include.d/healthcheck.conf
-
-%{__mkdir} -p $RPM_BUILD_ROOT%{_sysconfdir}/sysconfig
-%{__install} -m 644 -p %{SOURCE3} \
-    $RPM_BUILD_ROOT%{_sysconfdir}/sysconfig/nginx
-%{__install} -m 644 -p %{SOURCE7} \
-    $RPM_BUILD_ROOT%{_sysconfdir}/sysconfig/nginx-debug
-
-%if %{use_systemd}
-# install systemd-specific files
-%{__mkdir} -p $RPM_BUILD_ROOT%{_unitdir}
-%{__install} -m644 %SOURCE8 \
-    $RPM_BUILD_ROOT%{_unitdir}/nginx.service
-%{__install} -m644 %SOURCE11 \
-    $RPM_BUILD_ROOT%{_unitdir}/nginx-debug.service
-%{__mkdir} -p $RPM_BUILD_ROOT%{_libexecdir}/initscripts/legacy-actions/nginx
-%{__install} -m755 %SOURCE9 \
-    $RPM_BUILD_ROOT%{_libexecdir}/initscripts/legacy-actions/nginx/upgrade
-%else
-# install SYSV init stuff
-%{__mkdir} -p $RPM_BUILD_ROOT%{_initrddir}
-%{__install} -m755 nginx.init $RPM_BUILD_ROOT%{_initrddir}/nginx
-%{__install} -m755 nginx-debug.init $RPM_BUILD_ROOT%{_initrddir}/nginx-debug
+%if 0%{?with_mailcap_mimetypes}
+rm -f %{buildroot}%{_sysconfdir}/nginx/mime.types
 %endif
 
-# install log rotation stuff
-%{__mkdir} -p $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d
-%if 0%{?suse_version}
-%{__install} -m 644 -p %{SOURCE10} \
-    $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d/nginx
-%else
-%{__install} -m 644 -p %{SOURCE1} \
-    $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d/nginx
-%endif
+install -p -D -m 0644 %{_builddir}/nginx-%{version}/man/nginx.8 \
+    %{buildroot}%{_mandir}/man8/nginx.8
 
-%{__install} -m755 %{_builddir}/%{name}-%{version}/objs/nginx-debug \
-    $RPM_BUILD_ROOT%{_sbindir}/nginx-debug
+install -p -D -m 0755 %{SOURCE13} %{buildroot}%{_bindir}/nginx-upgrade
+install -p -D -m 0644 %{SOURCE14} %{buildroot}%{_mandir}/man8/nginx-upgrade.8
 
-%{__install} -m755 %{_builddir}/%{name}-%{version}/objs/ngx_http_xslt_filter_module-debug.so \
-    $RPM_BUILD_ROOT%{_libdir}/nginx/modules/ngx_http_xslt_filter_module-debug.so
-%{__install} -m755 %{_builddir}/%{name}-%{version}/objs/ngx_http_image_filter_module-debug.so \
-    $RPM_BUILD_ROOT%{_libdir}/nginx/modules/ngx_http_image_filter_module-debug.so
-%{__install} -m755 %{_builddir}/%{name}-%{version}/objs/ngx_http_geoip_module-debug.so \
-    $RPM_BUILD_ROOT%{_libdir}/nginx/modules/ngx_http_geoip_module-debug.so
+for i in ftdetect ftplugin indent syntax; do
+    install -p -D -m644 contrib/vim/${i}/nginx.vim \
+        %{buildroot}%{_datadir}/vim/vimfiles/${i}/nginx.vim
+done
 
-# addons
-%{__install} -m755 %{_builddir}/%{name}-%{version}/objs/ngx_http_vhost_traffic_status_module-debug.so \
-    $RPM_BUILD_ROOT%{_libdir}/nginx/modules/ngx_http_vhost_traffic_status_module-debug.so
+echo 'load_module "%{_libdir}/nginx/modules/ngx_http_geoip_module.so";' \
+    > %{buildroot}%{_datadir}/nginx/modules/mod-http-geoip.conf
+echo 'load_module "%{_libdir}/nginx/modules/ngx_http_image_filter_module.so";' \
+    > %{buildroot}%{_datadir}/nginx/modules/mod-http-image-filter.conf
+echo 'load_module "%{_libdir}/nginx/modules/ngx_http_perl_module.so";' \
+    > %{buildroot}%{_datadir}/nginx/modules/mod-http-perl.conf
+echo 'load_module "%{_libdir}/nginx/modules/ngx_http_xslt_filter_module.so";' \
+    > %{buildroot}%{_datadir}/nginx/modules/mod-http-xslt-filter.conf
+echo 'load_module "%{_libdir}/nginx/modules/ngx_mail_module.so";' \
+    > %{buildroot}%{_datadir}/nginx/modules/mod-mail.conf
+echo 'load_module "%{_libdir}/nginx/modules/ngx_stream_module.so";' \
+    > %{buildroot}%{_datadir}/nginx/modules/mod-stream.conf
 
-%clean
-%{__rm} -rf $RPM_BUILD_ROOT
-
-%files
-%defattr(-,root,root)
-
-%{_sbindir}/nginx
-%{_sbindir}/nginx-debug
-
-%dir %{_sysconfdir}/nginx
-%dir %{_sysconfdir}/nginx/conf.d
-%{_sysconfdir}/nginx/modules
-
-%config(noreplace) %{_sysconfdir}/nginx/nginx.conf
-%config(noreplace) %{_sysconfdir}/nginx/conf.d/vhosts.conf
-%config(noreplace) %{_sysconfdir}/nginx/conf.d/vhosts_ssl.conf
-%config(noreplace) %{_sysconfdir}/nginx/include.d/common.conf
-%config(noreplace) %{_sysconfdir}/nginx/include.d/healthcheck.conf
-%config(noreplace) %{_sysconfdir}/nginx/mime.types
-%config(noreplace) %{_sysconfdir}/nginx/fastcgi_params
-%config(noreplace) %{_sysconfdir}/nginx/scgi_params
-%config(noreplace) %{_sysconfdir}/nginx/uwsgi_params
-%config(noreplace) %{_sysconfdir}/nginx/koi-utf
-%config(noreplace) %{_sysconfdir}/nginx/koi-win
-%config(noreplace) %{_sysconfdir}/nginx/win-utf
-
-%config(noreplace) %{_sysconfdir}/logrotate.d/nginx
-%config(noreplace) %{_sysconfdir}/sysconfig/nginx
-%config(noreplace) %{_sysconfdir}/sysconfig/nginx-debug
-%if %{use_systemd}
-%{_unitdir}/nginx.service
-%{_unitdir}/nginx-debug.service
-%dir %{_libexecdir}/initscripts/legacy-actions/nginx
-%{_libexecdir}/initscripts/legacy-actions/nginx/*
-%else
-%{_initrddir}/nginx
-%{_initrddir}/nginx-debug
-%endif
-
-%attr(0755,root,root) %dir %{_libdir}/nginx
-%attr(0755,root,root) %dir %{_libdir}/nginx/modules
-%dir %{_datadir}/nginx
-%dir %{_datadir}/nginx/html
-%{_datadir}/nginx/html/*
-
-%attr(0755,root,root) %dir %{_localstatedir}/cache/nginx
-%attr(0755,root,root) %dir %{_localstatedir}/log/nginx
-
-%doc %{_datadir}/doc/%{name}-%{version}
-%doc %{_datadir}/doc/%{name}-%{version}/COPYRIGHT
-
-%files module-xslt
-%{_libdir}/nginx/modules/ngx_http_xslt_filter_module.so
-%{_libdir}/nginx/modules/ngx_http_xslt_filter_module-debug.so
-
-%files module-image-filter
-%{_libdir}/nginx/modules/ngx_http_image_filter_module.so
-%{_libdir}/nginx/modules/ngx_http_image_filter_module-debug.so
-
-%files module-geoip
-%{_libdir}/nginx/modules/ngx_http_geoip_module.so
-%{_libdir}/nginx/modules/ngx_http_geoip_module-debug.so
-
-%files module-vts
-%{_libdir}/nginx/modules/ngx_http_vhost_traffic_status_module.so
-%{_libdir}/nginx/modules/ngx_http_vhost_traffic_status_module-debug.so
-
-%files module-lua
-%{_libdir}/nginx/modules/ngx_http_lua_module.so
-
-%pre
-# Add the "nginx" user
-getent group %{nginx_group} >/dev/null || groupadd -r %{nginx_group}
-getent passwd %{nginx_user} >/dev/null || \
-    useradd -r -g %{nginx_group} -s /sbin/nologin \
-    -d %{nginx_home} -c "nginx user"  %{nginx_user}
+%pre filesystem
+getent group %{nginx_user} > /dev/null || groupadd -r %{nginx_user}
+getent passwd %{nginx_user} > /dev/null || \
+    useradd -r -d %{_localstatedir}/lib/nginx -g %{nginx_user} \
+    -s /sbin/nologin -c "Nginx web server" %{nginx_user}
 exit 0
 
 %post
-# Register the nginx service
+%systemd_post nginx.service
+
+%post mod-http-geoip
 if [ $1 -eq 1 ]; then
-%if %{use_systemd}
-    /usr/bin/systemctl preset nginx.service >/dev/null 2>&1 ||:
-    /usr/bin/systemctl preset nginx-debug.service >/dev/null 2>&1 ||:
-%else
-    /sbin/chkconfig --add nginx
-    /sbin/chkconfig --add nginx-debug
-%endif
-    # print site info
-    cat <<BANNER
-----------------------------------------------------------------------
+    /usr/bin/systemctl reload nginx.service >/dev/null 2>&1 || :
+fi
 
-Thanks for using nginx!
+%post mod-http-image-filter
+if [ $1 -eq 1 ]; then
+    /usr/bin/systemctl reload nginx.service >/dev/null 2>&1 || :
+fi
 
-Please find the official documentation for nginx here:
-* http://nginx.org/en/docs/
+%post mod-http-perl
+if [ $1 -eq 1 ]; then
+    /usr/bin/systemctl reload nginx.service >/dev/null 2>&1 || :
+fi
 
-Commercial subscriptions for nginx are available on:
-* http://nginx.com/products/
+%post mod-http-xslt-filter
+if [ $1 -eq 1 ]; then
+    /usr/bin/systemctl reload nginx.service >/dev/null 2>&1 || :
+fi
 
-----------------------------------------------------------------------
-BANNER
+%post mod-mail
+if [ $1 -eq 1 ]; then
+    /usr/bin/systemctl reload nginx.service >/dev/null 2>&1 || :
+fi
 
-    # Touch and set permisions on default log files on installation
-
-    if [ -d %{_localstatedir}/log/nginx ]; then
-        if [ ! -e %{_localstatedir}/log/nginx/access.log ]; then
-            touch %{_localstatedir}/log/nginx/access.log
-            %{__chmod} 640 %{_localstatedir}/log/nginx/access.log
-            %{__chown} %{nginx_user}:%{nginx_loggroup} %{_localstatedir}/log/nginx/access.log
-        fi
-
-        if [ ! -e %{_localstatedir}/log/nginx/error.log ]; then
-            touch %{_localstatedir}/log/nginx/error.log
-            %{__chmod} 640 %{_localstatedir}/log/nginx/error.log
-            %{__chown} %{nginx_user}:%{nginx_loggroup} %{_localstatedir}/log/nginx/error.log
-        fi
-    fi
+%post mod-stream
+if [ $1 -eq 1 ]; then
+    /usr/bin/systemctl reload nginx.service >/dev/null 2>&1 || :
 fi
 
 %preun
-if [ $1 -eq 0 ]; then
-%if %use_systemd
-    /usr/bin/systemctl --no-reload disable nginx.service >/dev/null 2>&1 ||:
-    /usr/bin/systemctl stop nginx.service >/dev/null 2>&1 ||:
-%else
-    /sbin/service nginx stop > /dev/null 2>&1
-    /sbin/chkconfig --del nginx
-    /sbin/chkconfig --del nginx-debug
-%endif
-fi
+%systemd_preun nginx.service
 
 %postun
-%if %use_systemd
-/usr/bin/systemctl daemon-reload >/dev/null 2>&1 ||:
-%endif
+%systemd_postun nginx.service
 if [ $1 -ge 1 ]; then
-    /sbin/service nginx status  >/dev/null 2>&1 || exit 0
-    /sbin/service nginx upgrade >/dev/null 2>&1 || echo \
-        "Binary upgrade failed, please check nginx's error.log"
+    /usr/bin/nginx-upgrade >/dev/null 2>&1 || :
 fi
 
+%files
+%license LICENSE
+%doc CHANGES README README.dynamic
+%if 0%{?rhel} == 7
+%doc UPGRADE-NOTES-1.6-to-1.10
+%endif
+%{_datadir}/nginx/html/*
+%{_bindir}/nginx-upgrade
+%{_sbindir}/nginx
+%{_datadir}/vim/vimfiles/ftdetect/nginx.vim
+%{_datadir}/vim/vimfiles/ftplugin/nginx.vim
+%{_datadir}/vim/vimfiles/syntax/nginx.vim
+%{_datadir}/vim/vimfiles/indent/nginx.vim
+%{_mandir}/man3/nginx.3pm*
+%{_mandir}/man8/nginx.8*
+%{_mandir}/man8/nginx-upgrade.8*
+%{_unitdir}/nginx.service
+%config(noreplace) %{_sysconfdir}/nginx/fastcgi.conf
+%config(noreplace) %{_sysconfdir}/nginx/fastcgi.conf.default
+%config(noreplace) %{_sysconfdir}/nginx/fastcgi_params
+%config(noreplace) %{_sysconfdir}/nginx/fastcgi_params.default
+%config(noreplace) %{_sysconfdir}/nginx/koi-utf
+%config(noreplace) %{_sysconfdir}/nginx/koi-win
+%if ! 0%{?with_mailcap_mimetypes}
+%config(noreplace) %{_sysconfdir}/nginx/mime.types
+%endif
+%config(noreplace) %{_sysconfdir}/nginx/mime.types.default
+%config(noreplace) %{_sysconfdir}/nginx/nginx.conf
+%config(noreplace) %{_sysconfdir}/nginx/nginx.conf.default
+%config(noreplace) %{_sysconfdir}/nginx/scgi_params
+%config(noreplace) %{_sysconfdir}/nginx/scgi_params.default
+%config(noreplace) %{_sysconfdir}/nginx/uwsgi_params
+%config(noreplace) %{_sysconfdir}/nginx/uwsgi_params.default
+%config(noreplace) %{_sysconfdir}/nginx/win-utf
+%config(noreplace) %{_sysconfdir}/logrotate.d/nginx
+%attr(700,%{nginx_user},%{nginx_user}) %dir %{_localstatedir}/lib/nginx
+%attr(700,%{nginx_user},%{nginx_user}) %dir %{_localstatedir}/lib/nginx/tmp
+%attr(700,%{nginx_user},%{nginx_user}) %dir %{_localstatedir}/log/nginx
+%dir %{_libdir}/nginx/modules
+
+%files all-modules
+
+%files filesystem
+%dir %{_datadir}/nginx
+%dir %{_datadir}/nginx/html
+%dir %{_sysconfdir}/nginx
+%dir %{_sysconfdir}/nginx/conf.d
+%dir %{_sysconfdir}/nginx/default.d
+
+%files mod-http-geoip
+%{_datadir}/nginx/modules/mod-http-geoip.conf
+%{_libdir}/nginx/modules/ngx_http_geoip_module.so
+
+%files mod-http-image-filter
+%{_datadir}/nginx/modules/mod-http-image-filter.conf
+%{_libdir}/nginx/modules/ngx_http_image_filter_module.so
+
+%files mod-http-perl
+%{_datadir}/nginx/modules/mod-http-perl.conf
+%{_libdir}/nginx/modules/ngx_http_perl_module.so
+%dir %{perl_vendorarch}/auto/nginx
+%{perl_vendorarch}/nginx.pm
+%{perl_vendorarch}/auto/nginx/nginx.so
+
+%files mod-http-xslt-filter
+%{_datadir}/nginx/modules/mod-http-xslt-filter.conf
+%{_libdir}/nginx/modules/ngx_http_xslt_filter_module.so
+
+%files mod-mail
+%{_datadir}/nginx/modules/mod-mail.conf
+%{_libdir}/nginx/modules/ngx_mail_module.so
+
+%files mod-stream
+%{_datadir}/nginx/modules/mod-stream.conf
+%{_libdir}/nginx/modules/ngx_stream_module.so
+
+%if 0%{?with_lua}
+%files mod-http-lua
+%{_libdir}/nginx/modules/ngx_http_lua_module.so
+%endif
+
+
 %changelog
-* Tue Nov 21 2017 Hyunsung.Jang <hyunsung@sk.com> 1:1.12.2-1%{?dist}
-- Update 1.12.2
+* Tue May 07 2019 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.12.2-3
+- Add missing directory for vim plugin
 
-* Tue Sep 26 2017 Hyunsung.Jang <hyunsung@sk.com> 1:1.12.1-1%{?dist}
-- 1.12.1
-  update nginx_module_vts_version 0.1.15
-  update nginx_module_lua_version 0.10.10
+* Tue Mar 6 2018 Tadej Janež <tadej.j@nez.si> - 1:1.12.2-2
+- enable building the ngx_http_auth_request_module module (RHBZ #1471107)
 
-* Wed Feb 22 2017 YoungJoo.Kim <vozlt@sk.com> 1:1.11.10-1%{?dist}
-- 1.11.10
-  update nginx_module_vts_version 0.1.14
+* Wed Oct 18 2017 Luboš Uhliarik <luhliari@redhat.com> - 1:1.12.2-1
+- update to upstream release 1.12.2
+- Resolves: #1468584 - (CVE-2017-7529) CVE-2017-7529 nginx: Integer
+  overflow in nginx range filter module leading to memory disclosure
 
-* Mon Jan 16 2017 YoungJoo.Kim <vozlt@sk.com> 1:1.11.8-1%{?dist}
-- 1.11.8
-  update nginx_module_vts_version 0.1.12
+* Mon Sep 18 2017 Luboš Uhliarik <luhliari@redhat.com> - 1:1.10.2-2
+- Resolves: #1478662 - rebuild for ALPN support
 
-* Thu Nov 24 2016 YoungJoo.Kim <vozlt@sk.com> 1:1.11.6-1%{?dist}
-- 1.11.6
-  update nginx_module_vts_version 0.1.11
-  update nginx_module_lua_version 0.10.7
+* Mon Oct 31 2016 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.10.2-1
+- update to upstream release 1.10.2
 
-* Wed Jul 13 2016 YoungJoo.Kim <vozlt@sk.com> 1:1.11.2-1%{?dist}
-- 1.11.2
-  added --add-dynamic-module=lua-nginx-module
-  added --add-dynamic-module=nginx-module-vts
-  changed nginx.spec: nginx_user nobody
-  changed nginx.spec: nginx_group nobody
-  changed nginx.spec: nginx_loggroup root
-  changed nginx.conf: nobody
+* Tue May 31 2016 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.10.1-1
+- update to upstream release 1.10.1
 
-* Wed Feb 24 2016 Sergey Budnevitch <sb@nginx.com>
-- common configure args are now in macros
-- xslt, image-filter and geoip dynamic modules added
-- 1.9.12
+* Sun May 15 2016 Jitka Plesnikova <jplesnik@redhat.com> - 1:1.10.0-4
+- Perl 5.24 rebuild
 
-* Tue Feb  9 2016 Sergey Budnevitch <sb@nginx.com>
-- dynamic modules path and symlink in %{_sysconfdir}/nginx added
-- 1.9.11
+* Sun May  8 2016 Peter Robinson <pbrobinson@fedoraproject.org> 1:1.10.0-3
+- Enable AIO on aarch64 (rhbz 1258414)
 
-* Tue Jan 26 2016 Konstantin Pavlov <thresh@nginx.com>
-- 1.9.10
+* Wed Apr 27 2016 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.10.0-2
+- only Require nginx-all-modules for EPEL and current Fedora releases
 
-* Wed Dec  9 2015 Konstantin Pavlov <thresh@nginx.com>
-- 1.9.9
+* Wed Apr 27 2016 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.10.0-1
+- update to upstream release 1.10.0
+- split dynamic modules into subpackages
+- spec file cleanup
 
-* Tue Dec  8 2015 Konstantin Pavlov <thresh@nginx.com>
-- 1.9.8
-- http_slice module enabled
+* Thu Feb 04 2016 Fedora Release Engineering <releng@fedoraproject.org> - 1:1.8.1-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_24_Mass_Rebuild
 
-* Tue Nov 17 2015 Konstantin Pavlov <thresh@nginx.com>
-- 1.9.7
+* Tue Jan 26 2016 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.8.1-1
+- update to upstream release 1.8.1
+- CVE-2016-0747: Insufficient limits of CNAME resolution in resolver
+- CVE-2016-0746: Use-after-free during CNAME response processing in resolver
+- CVE-2016-0742: Invalid pointer dereference in resolver
 
-* Tue Oct 27 2015 Sergey Budnevitch <sb@nginx.com>
-- 1.9.6
+* Sun Oct 04 2015 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.8.0-14
+- consistently use '%%global with_foo' style of logic
+- remove PID file before starting nginx (#1268621)
 
-* Tue Sep 22 2015 Andrei Belov <defan@nginx.com>
-- 1.9.5
-- http_spdy module replaced with http_v2 module
+* Fri Sep 25 2015 Ville Skyttä <ville.skytta@iki.fi> - 1:1.8.0-13
+- Use nginx-mimetypes from mailcap (#1248736)
+- Mark LICENSE as %%license
 
-* Tue Aug 18 2015 Konstantin Pavlov <thresh@nginx.com>
-- 1.9.4
+* Thu Sep 10 2015 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.8.0-12
+- also build with gperftools on aarch64 (#1258412)
 
-* Tue Jul 14 2015 Sergey Budnevitch <sb@nginx.com>
-- 1.9.3
+* Wed Aug 12 2015 Nikos Mavrogiannopoulos <nmav@redhat.com> - 1:1.8.0-11
+- nginx.conf: added commented-out SSL configuration directives (#1179232)
 
-* Tue May 26 2015 Sergey Budnevitch <sb@nginx.com>
-- 1.9.1
+* Fri Jul 03 2015 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.8.0-10
+- switch back to /bin/kill in logrotate script due to SELinux denials
 
-* Tue Apr 28 2015 Sergey Budnevitch <sb@nginx.com>
-- 1.9.0
-- thread pool support added
-- stream module added
-- example_ssl.conf removed
+* Tue Jun 16 2015 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.8.0-9
+- fix path to png in error pages (#1232277)
+- optimize png images with optipng
 
-* Tue Apr  7 2015 Sergey Budnevitch <sb@nginx.com>
-- 1.7.12
+* Sun Jun 14 2015 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.8.0-8
+- replace /bin/kill with /usr/bin/systemctl kill in logrotate script (#1231543)
+- remove After=syslog.target in nginx.service (#1231543)
+- replace ExecStop with KillSignal=SIGQUIT in nginx.service (#1231543)
 
-* Tue Mar 24 2015 Sergey Budnevitch <sb@nginx.com>
-- 1.7.11
+* Wed Jun 03 2015 Jitka Plesnikova <jplesnik@redhat.com> - 1:1.8.0-7
+- Perl 5.22 rebuild
 
-* Tue Feb 10 2015 Sergey Budnevitch <sb@nginx.com>
-- 1.7.10
+* Sun May 10 2015 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.8.0-6
+- revert previous change
 
-* Tue Dec 23 2014 Sergey Budnevitch <sb@nginx.com>
-- 1.7.9
+* Sun May 10 2015 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.8.0-5
+- move default server to default.conf (#1220094)
 
-* Tue Dec  2 2014 Sergey Budnevitch <sb@nginx.com>
-- 1.7.8
+* Sun May 10 2015 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.8.0-4
+- add TimeoutStopSec=5 and KillMode=mixed to nginx.service
+- set worker_processes to auto
+- add some common options to the http block in nginx.conf
+- run nginx-upgrade on package update
+- remove some redundant scriptlet commands
+- listen on ipv6 for default server (#1217081)
 
-* Tue Sep 30 2014 Sergey Budnevitch <sb@nginx.com>
-- 1.7.6
+* Wed Apr 22 2015 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.8.0-3
+- improve nginx-upgrade script
 
-* Tue Sep 16 2014 Sergey Budnevitch <sb@nginx.com>
-- epoch added to the EPEL7/CentOS7 spec to override EPEL one
-- 1.7.5
+* Wed Apr 22 2015 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.8.0-2
+- add --with-pcre-jit
 
-* Tue Aug  5 2014 Sergey Budnevitch <sb@nginx.com>
-- 1.7.4
+* Wed Apr 22 2015 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.8.0-1
+- update to upstream release 1.8.0
 
-* Tue Jul  8 2014 Sergey Budnevitch <sb@nginx.com>
-- 1.7.3
+* Thu Apr 09 2015 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.7.12-1
+- update to upstream release 1.7.12
 
-* Tue Jun 17 2014 Sergey Budnevitch <sb@nginx.com>
-- 1.7.2
+* Sun Feb 15 2015 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.7.10-1
+- update to upstream release 1.7.10
+- remove systemd conditionals
 
-* Tue May 27 2014 Sergey Budnevitch <sb@nginx.com>
-- 1.7.1
-- incorrect sysconfig filename finding in the initscript fixed
+* Wed Oct 22 2014 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.6.2-4
+- fix package ownership of directories
 
-* Thu Apr 24 2014 Konstantin Pavlov <thresh@nginx.com>
-- 1.7.0
+* Wed Oct 22 2014 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.6.2-3
+- add vim files (#1142849)
 
-* Tue Apr  8 2014 Sergey Budnevitch <sb@nginx.com>
-- 1.5.13
-- built spdy module on rhel/centos 6
+* Mon Sep 22 2014 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.6.2-2
+- create nginx-filesystem subpackage (patch from Remi Collet)
+- create /etc/nginx/default.d as a drop-in directory for configuration files
+  for the default server block
+- clean up nginx.conf
 
-* Tue Mar 18 2014 Sergey Budnevitch <sb@nginx.com>
-- 1.5.12
-- spec cleanup
-- openssl version dependence added
-- upgrade() function in the init script improved
-- warning added when binary upgrade returns non-zero exit code
+* Wed Sep 17 2014 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.6.2-1
+- update to upstream release 1.6.2
+- CVE-2014-3616 nginx: virtual host confusion (#1142573)
 
-* Tue Mar  4 2014 Sergey Budnevitch <sb@nginx.com>
-- 1.5.11
+* Wed Aug 27 2014 Jitka Plesnikova <jplesnik@redhat.com> - 1:1.6.1-4
+- Perl 5.20 rebuild
 
-* Tue Feb  4 2014 Sergey Budnevitch <sb@nginx.com>
-- 1.5.10
+* Sun Aug 17 2014 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 1:1.6.1-3
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_21_22_Mass_Rebuild
 
-* Wed Jan 22 2014 Sergey Budnevitch <sb@nginx.com>
-- 1.5.9
+* Tue Aug 05 2014 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.6.1-2
+- add logic for EPEL 7
 
-* Tue Dec 17 2013 Sergey Budnevitch <sb@nginx.com>
-- 1.5.8
-- fixed invalid week days in the changelog
+* Tue Aug 05 2014 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.6.1-1
+- update to upstream release 1.6.1
+- (#1126891) CVE-2014-3556: SMTP STARTTLS plaintext injection flaw
 
-* Tue Nov 19 2013 Sergey Budnevitch <sb@nginx.com>
-- 1.5.7
+* Wed Jul 02 2014 Yaakov Selkowitz <yselkowi@redhat.com> - 1:1.6.0-3
+- Fix FTBFS on aarch64 (#1115559)
 
-* Tue Oct  1 2013 Sergey Budnevitch <sb@nginx.com>
-- 1.5.6
+* Sat Jun 07 2014 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 1:1.6.0-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_21_Mass_Rebuild
 
-* Tue Sep 17 2013 Andrei Belov <defan@nginx.com>
-- 1.5.5
+* Sat Apr 26 2014 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.6.0-1
+- update to upstream release 1.6.0
 
-* Tue Aug 27 2013 Sergey Budnevitch <sb@nginx.com>
-- 1.5.4
-- auth request module added
+* Tue Mar 18 2014 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.4.7-1
+- update to upstream release 1.4.7
 
-* Tue Jul 30 2013 Sergey Budnevitch <sb@nginx.com>
-- 1.5.3
+* Wed Mar 05 2014 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.4.6-1
+- update to upstream release 1.4.6
 
-* Tue Jul  2 2013 Sergey Budnevitch <sb@nginx.com>
-- 1.5.2
+* Sun Feb 16 2014 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.4.5-2
+- avoid multiple index directives (#1065488)
 
-* Tue Jun  4 2013 Sergey Budnevitch <sb@nginx.com>
-- 1.5.1
+* Sun Feb 16 2014 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.4.5-1
+- update to upstream release 1.4.5
 
-* Mon May  6 2013 Sergey Budnevitch <sb@nginx.com>
-- 1.5.0
+* Wed Nov 20 2013 Peter Borsa <peter.borsa@gmail.com> - 1:1.4.4-1
+- Update to upstream release 1.4.4
+- Security fix BZ 1032267
 
-* Tue Apr 16 2013 Sergey Budnevitch <sb@nginx.com>
-- 1.3.16
+* Sun Nov 03 2013 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.4.3-1
+- update to upstream release 1.4.3
 
-* Tue Mar 26 2013 Sergey Budnevitch <sb@nginx.com>
-- 1.3.15
-- gunzip module added
-- set permissions on default log files at installation
+* Fri Aug 09 2013 Jonathan Steffan <jsteffan@fedoraproject.org> - 1:1.4.2-3
+- Add in conditionals to build for non-systemd targets
 
-* Tue Feb 12 2013 Sergey Budnevitch <sb@nginx.com>
-- excess slash removed from --prefix
-- 1.2.7
+* Sat Aug 03 2013 Petr Pisar <ppisar@redhat.com> - 1:1.4.2-2
+- Perl 5.18 rebuild
 
-* Tue Dec 11 2012 Sergey Budnevitch <sb@nginx.com>
-- 1.2.6
+* Fri Jul 19 2013 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.4.2-1
+- update to upstream release 1.4.2
 
-* Tue Nov 13 2012 Sergey Budnevitch <sb@nginx.com>
-- 1.2.5
+* Wed Jul 17 2013 Petr Pisar <ppisar@redhat.com> - 1:1.4.1-3
+- Perl 5.18 rebuild
 
-* Tue Sep 25 2012 Sergey Budnevitch <sb@nginx.com>
-- 1.2.4
+* Tue Jun 11 2013 Remi Collet <rcollet@redhat.com> - 1:1.4.1-2
+- rebuild for new GD 2.1.0
 
-* Tue Aug  7 2012 Sergey Budnevitch <sb@nginx.com>
-- 1.2.3
-- nginx-debug package now actually contains non stripped binary
+* Tue May 07 2013 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.4.1-1
+- update to upstream release 1.4.1 (#960605, #960606):
+  CVE-2013-2028 stack-based buffer overflow when handling certain chunked
+  transfer encoding requests
 
-* Tue Jul  3 2012 Sergey Budnevitch <sb@nginx.com>
-- 1.2.2
+* Sun Apr 28 2013 Dan Horák <dan[at]danny.cz> - 1:1.4.0-2
+- gperftools exist only on selected arches
 
-* Tue Jun  5 2012 Sergey Budnevitch <sb@nginx.com>
-- 1.2.1
+* Fri Apr 26 2013 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.4.0-1
+- update to upstream release 1.4.0
+- enable SPDY module (new in this version)
+- enable http gunzip module (new in this version)
+- enable google perftools module and add gperftools-devel to BR
+- enable debugging (#956845)
+- trim changelog
 
-* Mon Apr 23 2012 Sergey Budnevitch <sb@nginx.com>
-- 1.2.0
+* Tue Apr 02 2013 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.8-1
+- update to upstream release 1.2.8
 
-* Thu Apr 12 2012 Sergey Budnevitch <sb@nginx.com>
-- 1.0.15
+* Fri Feb 22 2013 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.7-2
+- make sure nginx directories are not world readable (#913724, #913735)
 
-* Thu Mar 15 2012 Sergey Budnevitch <sb@nginx.com>
-- 1.0.14
-- OpenSUSE init script and SuSE specific changes to spec file added
+* Sat Feb 16 2013 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.7-1
+- update to upstream release 1.2.7
+- add .asc file
 
-* Mon Mar  5 2012 Sergey Budnevitch <sb@nginx.com>
-- 1.0.13
+* Tue Feb 05 2013 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.6-6
+- use 'kill' instead of 'systemctl' when rotating log files to workaround
+  SELinux issue (#889151)
 
-* Mon Feb  6 2012 Sergey Budnevitch <sb@nginx.com>
-- 1.0.12
-- banner added to install script
+* Wed Jan 23 2013 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.6-5
+- uncomment "include /etc/nginx/conf.d/*.conf by default but leave the
+  conf.d directory empty (#903065)
 
-* Thu Dec 15 2011 Sergey Budnevitch <sb@nginx.com>
-- 1.0.11
-- init script enhancements (thanks to Gena Makhomed)
-- one second sleep during upgrade replaced with 0.1 sec usleep
+* Wed Jan 23 2013 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.6-4
+- add comment in nginx.conf regarding "include /etc/nginf/conf.d/*.conf"
+  (#903065)
 
-* Tue Nov 15 2011 Sergey Budnevitch <sb@nginx.com>
-- 1.0.10
+* Wed Dec 19 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.6-3
+- use correct file ownership when rotating log files
 
-* Tue Nov  1 2011 Sergey Budnevitch <sb@nginx.com>
-- 1.0.9
-- nginx-debug package added
+* Tue Dec 18 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.6-2
+- send correct kill signal and use correct file permissions when rotating
+  log files (#888225)
+- send correct kill signal in nginx-upgrade
 
-* Tue Oct 11 2011 Sergey Budnevitch <sb@nginx.com>
-- spec file cleanup (thanks to Yury V. Zaytsev)
-- log dir permitions fixed
-- logrotate creates new logfiles with nginx owner
-- "upgrade" argument to init-script added (based on fedora one)
+* Tue Dec 11 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.6-1
+- update to upstream release 1.2.6
 
-* Sat Oct  1 2011 Sergey Budnevitch <sb@nginx.com>
-- 1.0.8
-- built with mp4 module
+* Sat Nov 17 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.5-1
+- update to upstream release 1.2.5
 
-* Fri Sep 30 2011 Sergey Budnevitch <sb@nginx.com>
-- 1.0.7
+* Sun Oct 28 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.4-1
+- update to upstream release 1.2.4
+- introduce new systemd-rpm macros (#850228)
+- link to official documentation not the community wiki (#870733)
+- do not run systemctl try-restart after package upgrade to allow the
+  administrator to run nginx-upgrade and avoid downtime
+- add nginx man page (#870738)
+- add nginx-upgrade man page and remove README.fedora
+- remove chkconfig from Requires(post/preun)
+- remove initscripts from Requires(preun/postun)
+- remove separate configuration files in "/etc/nginx/conf.d" directory
+  and revert to upstream default of a centralized nginx.conf file
+  (#803635) (#842738)
 
-* Tue Aug 30 2011 Sergey Budnevitch <sb@nginx.com>
-- 1.0.6
-- replace "conf.d/*" config include with "conf.d/*.conf" in default nginx.conf
+* Fri Sep 21 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.3-1
+- update to upstream release 1.2.3
 
-* Wed Aug 10 2011 Sergey Budnevitch
-- Initial release
+* Fri Jul 20 2012 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 1:1.2.1-3
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_18_Mass_Rebuild
+
+* Thu Jun 28 2012 Petr Pisar <ppisar@redhat.com> - 1:1.2.1-2
+- Perl 5.16 rebuild
+
+* Sun Jun 10 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.1-1
+- update to upstream release 1.2.1
+
+* Fri Jun 08 2012 Petr Pisar <ppisar@redhat.com> - 1:1.2.0-2
+- Perl 5.16 rebuild
+
+* Wed May 16 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.2.0-1
+- update to upstream release 1.2.0
+
+* Wed May 16 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.0.15-4
+- add nginx-upgrade to replace functionality from the nginx initscript
+  that was lost after migration to systemd
+- add README.fedora to describe usage of nginx-upgrade
+- nginx.logrotate: use built-in systemd kill command in postrotate script
+- nginx.service: start after syslog.target and network.target
+- nginx.service: remove unnecessary references to config file location
+- nginx.service: use /bin/kill instead of "/usr/sbin/nginx -s" following
+  advice from nginx-devel
+- nginx.service: use private /tmp
+
+* Mon May 14 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.0.15-3
+- fix incorrect postrotate script in nginx.logrotate
+
+* Thu Apr 19 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.0.15-2
+- renable auto-cc-gcc patch due to warnings on rawhide
+
+* Sat Apr 14 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.0.15-1
+- update to upstream release 1.0.15
+- no need to apply auto-cc-gcc patch
+- add %%global _hardened_build 1
+
+* Thu Mar 15 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.0.14-1
+- update to upstream release 1.0.14
+- amend some %%changelog formatting
+
+* Tue Mar 06 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.0.13-1
+- update to upstream release 1.0.13
+- amend --pid-path and --log-path
+
+* Sun Mar 04 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.0.12-5
+- change pid path in nginx.conf to match systemd service file
+
+* Sun Mar 04 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.0.12-3
+- fix %%pre scriptlet
+
+* Mon Feb 20 2012 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.0.12-2
+- update upstream URL
+- replace %%define with %%global
+- remove obsolete BuildRoot tag, %%clean section and %%defattr
+- remove various unnecessary commands
+- add systemd service file and update scriptlets
+- add Epoch to accommodate %%triggerun as part of systemd migration
+
+* Sun Feb 19 2012 Jeremy Hinegardner <jeremy at hinegardner dot org> - 1.0.12-1
+- Update to 1.0.12
+
+* Thu Nov 17 2011 Keiran "Affix" Smith <fedora@affix.me> - 1.0.10-1
+- Bugfix: a segmentation fault might occur in a worker process if resolver got a big DNS response. Thanks to Ben Hawkes.
+- Bugfix: in cache key calculation if internal MD5 implementation wasused; the bug had appeared in 1.0.4.
+- Bugfix: the module ngx_http_mp4_module sent incorrect "Content-Length" response header line if the "start" argument was used. Thanks to Piotr Sikora.
+
+* Thu Oct 27 2011 Keiran "Affix" Smith <fedora@affix.me> - 1.0.8-1
+- Update to new 1.0.8 stable release
+
+* Fri Aug 26 2011 Keiran "Affix" Smith <fedora@affix.me> - 1.0.5-1
+- Update nginx to Latest Stable Release
+
+* Fri Jun 17 2011 Marcela Mašláňová <mmaslano@redhat.com> - 1.0.0-3
+- Perl mass rebuild
+
+* Thu Jun 09 2011 Marcela Mašláňová <mmaslano@redhat.com> - 1.0.0-2
+- Perl 5.14 mass rebuild
+
+* Wed Apr 27 2011 Jeremy Hinegardner <jeremy at hinegardner dot org> - 1.0.0-1
+- Update to 1.0.0
+
+* Tue Feb 08 2011 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 0.8.53-6
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_15_Mass_Rebuild
+
+* Sun Dec 12 2010 Jeremy Hinegardner <jeremy at hinegardner dot org> - 0.8.53.5
+- Extract out default config into its own file (bug #635776)
+
+* Sun Dec 12 2010 Jeremy Hinegardner <jeremy at hinegardner dot org> - 0.8.53-4
+- Revert ownership of log dir
+
+* Sun Dec 12 2010 Jeremy Hinegardner <jeremy at hinegardner dot org> - 0.8.53-3
+- Change ownership of /var/log/nginx to be 0700 nginx:nginx
+- update init script to use killproc -p
+- add reopen_logs command to init script
+- update init script to use nginx -q option
+
+* Sun Oct 31 2010 Jeremy Hinegardner <jeremy at hinegardner dot org> - 0.8.53-2
+- Fix linking of perl module
+
+* Sun Oct 31 2010 Jeremy Hinegardner <jeremy at hinegardner dot org> - 0.8.53-1
+- Update to new stable 0.8.53
+
+* Sat Jul 31 2010 Jeremy Hinegardner <jeremy at hinegardner dot org> - 0.7.67-2
+- add Provides: webserver (bug #619693)
+
+* Sun Jun 20 2010 Jeremy Hinegardner <jeremy at hinegardner dot org> - 0.7.67-1
+- Update to new stable 0.7.67
+- fix bugzilla #591543
+
+* Tue Jun 01 2010 Marcela Maslanova <mmaslano@redhat.com> - 0.7.65-2
+- Mass rebuild with perl-5.12.0
+
+* Mon Feb 15 2010 Jeremy Hinegardner <jeremy at hinegardner dot org> - 0.7.65-1
+- Update to new stable 0.7.65
+- change ownership of logdir to root:root
+- add support for ipv6 (bug #561248)
+- add random_index_module
+- add secure_link_module
+
+* Fri Dec 04 2009 Jeremy Hinegardner <jeremy at hinegardner dot org> - 0.7.64-1
+- Update to new stable 0.7.64
