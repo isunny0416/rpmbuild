@@ -7,7 +7,6 @@
 %endif
 
 %global with_aio 1
-%global with_lua 1
 
 %if 0%{?fedora} > 22
 %global with_mailcap_mimetypes 1
@@ -92,9 +91,7 @@ Requires:          nginx-mod-http-perl = %{epoch}:%{version}-%{release}
 Requires:          nginx-mod-http-xslt-filter = %{epoch}:%{version}-%{release}
 Requires:          nginx-mod-mail = %{epoch}:%{version}-%{release}
 Requires:          nginx-mod-stream = %{epoch}:%{version}-%{release}
-%if 0%{?with_lua}
 Requires:          nginx-mod-http-lua = %{epoch}:%{version}-%{release}
-%endif
 
 %description all-modules
 %{summary}.
@@ -200,10 +197,8 @@ sed -i -e 's#KillMode=.*#KillMode=process#g' %{SOURCE10}
 sed -i -e 's#PROFILE=SYSTEM#HIGH:!aNULL:!MD5#' %{SOURCE12}
 %endif
 
-%if 0%{?with_lua}
 export LUAJIT_LIB=%{luajit_lib_dir}
 export LUAJIT_INC=%{luajit_inc_dir}
-%endif
 
 
 %build
@@ -265,9 +260,7 @@ export DESTDIR=%{buildroot}
     --with-debug \
     --with-cc-opt="%{optflags} $(pcre-config --cflags)" \
     --with-ld-opt="$RPM_LD_FLAGS -Wl,-E,-rpath,/usr/lib64" \
-%if 0%{?with_lua}
     --add-dynamic-module=%{_builddir}/lua-nginx-module-%{lua_version}
-%endif
 
 make %{?_smp_mflags}
 
@@ -328,6 +321,8 @@ echo 'load_module "%{_libdir}/nginx/modules/ngx_http_perl_module.so";' \
     > %{buildroot}%{_datadir}/nginx/modules/mod-http-perl.conf
 echo 'load_module "%{_libdir}/nginx/modules/ngx_http_xslt_filter_module.so";' \
     > %{buildroot}%{_datadir}/nginx/modules/mod-http-xslt-filter.conf
+echo 'load_module "%{_libdir}/nginx/modules/ngx_http_lua_module.so";' \
+    > %{buildroot}%{_datadir}/nginx/modules/mod-http-lua.conf
 echo 'load_module "%{_libdir}/nginx/modules/ngx_mail_module.so";' \
     > %{buildroot}%{_datadir}/nginx/modules/mod-mail.conf
 echo 'load_module "%{_libdir}/nginx/modules/ngx_stream_module.so";' \
@@ -372,6 +367,12 @@ fi
 if [ $1 -eq 1 ]; then
     /usr/bin/systemctl reload nginx.service >/dev/null 2>&1 || :
 fi
+
+%post mod-http-lua
+if [ $1 -eq 1 ]; then
+    /usr/bin/systemctl reload nginx.service >/dev/null 2>&1 || :
+fi
+
 
 %preun
 %systemd_preun nginx.service
@@ -458,13 +459,16 @@ fi
 %{_datadir}/nginx/modules/mod-stream.conf
 %{_libdir}/nginx/modules/ngx_stream_module.so
 
-%if 0%{?with_lua}
 %files mod-http-lua
+%{_datadir}/nginx/modules/mod-http-lua.conf
 %{_libdir}/nginx/modules/ngx_http_lua_module.so
-%endif
 
 
 %changelog
+* Mon Aug 26 2019 Insun Kim <isunny0416@gmail.com> - 1:1.17.3-1
+- Update to 1.17.3
+- Add module lua
+
 * Tue May 07 2019 Jamie Nguyen <jamielinux@fedoraproject.org> - 1:1.12.2-3
 - Add missing directory for vim plugin
 
