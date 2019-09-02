@@ -14,7 +14,7 @@
 
 %define lua_version 0.10.15
 %define luajit_lib_dir /usr/lib64
-%define luajit_inc_dir /usr/include/luajit-2.0
+%define luajit_inc_dir /usr/include/luajit-2.1
 
 Name:              nginx
 Epoch:             1
@@ -197,9 +197,6 @@ sed -i -e 's#KillMode=.*#KillMode=process#g' %{SOURCE10}
 sed -i -e 's#PROFILE=SYSTEM#HIGH:!aNULL:!MD5#' %{SOURCE12}
 %endif
 
-export LUAJIT_LIB=%{luajit_lib_dir}
-export LUAJIT_INC=%{luajit_inc_dir}
-
 
 %build
 # nginx does not utilize a standard configure script.  It has its own
@@ -207,6 +204,8 @@ export LUAJIT_INC=%{luajit_inc_dir}
 # to error out.  This is is also the reason for the DESTDIR environment
 # variable.
 pwd
+export LUAJIT_LIB=%{luajit_lib_dir}
+export LUAJIT_INC=%{luajit_inc_dir}
 export DESTDIR=%{buildroot}
 ./configure \
     --prefix=%{_datadir}/nginx \
