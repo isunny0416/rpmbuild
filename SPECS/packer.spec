@@ -40,6 +40,10 @@ popd
 %{__mkdir_p} %{buildroot}%{_bindir}
 find %{go_path}/bin -name "%{name}*" -exec install {} %{buildroot}%{_bindir} \;
 
+%if 0%{?rhel} >= 6
+  mv %{buildroot}%{_bindir}/%{name} %{buildroot}%{_bindir}/%{name}.io
+%endif
+
 %clean
 %{__rm} -rf %{go_path}
 %{__rm} -rf %{_builddir}/%{name}-%{version}
@@ -52,5 +56,9 @@ find %{go_path}/bin -name "%{name}*" -exec install {} %{buildroot}%{_bindir} \;
 %doc %{name}-%{version}/CHANGELOG.md %{name}-%{version}/README.md %{name}-%{version}/LICENSE
 
 %changelog
+* Wed Dec 04 2019 Insun Kim <isunny0416@gmail.com> - 1.4.5
+- On some RedHat-based Linux distributions there is another tool named packer installed by default. 
+- You can check for this using which -a packer. If you get an error like this it indicates there is a name conflict
+- To fix this, you can create a symlink to packer that uses a different name like "packer.io"
 * Wed Dec 04 2019 Insun Kim <isunny0416@gmail.com> - 1.4.5
 - Initial release
